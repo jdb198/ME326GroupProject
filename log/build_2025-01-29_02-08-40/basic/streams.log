@@ -1,0 +1,22 @@
+[0.225s] Invoking command in '/home/ubuntu/Desktop/Works/ME326GroupProject/build/basic': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/dev_ws/install/interbotix_xs_modules:/dev_ws/install/interbotix_common_modules:/opt/ros/galactic /usr/bin/cmake --build /home/ubuntu/Desktop/Works/ME326GroupProject/build/basic -- -j20 -l20
+[1.013s] Invoked command in '/home/ubuntu/Desktop/Works/ME326GroupProject/build/basic' returned '0': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/dev_ws/install/interbotix_xs_modules:/dev_ws/install/interbotix_common_modules:/opt/ros/galactic /usr/bin/cmake --build /home/ubuntu/Desktop/Works/ME326GroupProject/build/basic -- -j20 -l20
+[1.207s] Invoking command in '/home/ubuntu/Desktop/Works/ME326GroupProject/build/basic': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/dev_ws/install/interbotix_xs_modules:/dev_ws/install/interbotix_common_modules:/opt/ros/galactic /usr/bin/cmake --install /home/ubuntu/Desktop/Works/ME326GroupProject/build/basic
+[1.360s] -- Install configuration: ""
+[1.379s] -- Execute custom install script
+[1.439s] -- Up-to-date symlink: /home/ubuntu/Desktop/Works/ME326GroupProject/install/basic/lib/basic/input_node.py
+[1.553s] -- Up-to-date symlink: /home/ubuntu/Desktop/Works/ME326GroupProject/install/basic/share/ament_index/resource_index/package_run_dependencies/basic
+[1.645s] -- Up-to-date symlink: /home/ubuntu/Desktop/Works/ME326GroupProject/install/basic/share/ament_index/resource_index/parent_prefix_path/basic
+[1.717s] -- Up-to-date symlink: /home/ubuntu/Desktop/Works/ME326GroupProject/install/basic/share/basic/environment/ament_prefix_path.sh
+[1.741s] -- Up-to-date symlink: /home/ubuntu/Desktop/Works/ME326GroupProject/install/basic/share/basic/environment/ament_prefix_path.dsv
+[1.776s] -- Up-to-date symlink: /home/ubuntu/Desktop/Works/ME326GroupProject/install/basic/share/basic/environment/path.sh
+[1.825s] -- Up-to-date symlink: /home/ubuntu/Desktop/Works/ME326GroupProject/install/basic/share/basic/environment/path.dsv
+[1.867s] -- Up-to-date symlink: /home/ubuntu/Desktop/Works/ME326GroupProject/install/basic/share/basic/local_setup.bash
+[1.915s] -- Up-to-date symlink: /home/ubuntu/Desktop/Works/ME326GroupProject/install/basic/share/basic/local_setup.sh
+[1.957s] -- Up-to-date symlink: /home/ubuntu/Desktop/Works/ME326GroupProject/install/basic/share/basic/local_setup.zsh
+[2.027s] -- Up-to-date symlink: /home/ubuntu/Desktop/Works/ME326GroupProject/install/basic/share/basic/local_setup.dsv
+[2.043s] -- Symlinking: /home/ubuntu/Desktop/Works/ME326GroupProject/install/basic/share/basic/package.dsv
+[2.344s] -- Up-to-date symlink: /home/ubuntu/Desktop/Works/ME326GroupProject/install/basic/share/ament_index/resource_index/packages/basic
+[2.395s] -- Up-to-date symlink: /home/ubuntu/Desktop/Works/ME326GroupProject/install/basic/share/basic/cmake/basicConfig.cmake
+[2.440s] -- Up-to-date symlink: /home/ubuntu/Desktop/Works/ME326GroupProject/install/basic/share/basic/cmake/basicConfig-version.cmake
+[2.487s] -- Up-to-date symlink: /home/ubuntu/Desktop/Works/ME326GroupProject/install/basic/share/basic/package.xml
+[2.497s] Invoked command in '/home/ubuntu/Desktop/Works/ME326GroupProject/build/basic' returned '0': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/dev_ws/install/interbotix_xs_modules:/dev_ws/install/interbotix_common_modules:/opt/ros/galactic /usr/bin/cmake --install /home/ubuntu/Desktop/Works/ME326GroupProject/build/basic
