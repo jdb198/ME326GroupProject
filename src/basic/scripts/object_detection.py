@@ -23,7 +23,7 @@ class ScanApproachNode(Node):
     def __init__(self):
         super().__init__("scan_approach_node")
 
-        self.json_key_path = "/home/locobot/Downloads/keys.json"
+        self.json_key_path = "/home/locobot/Downloads/cs-339r-9cd080ebdedf.json"
 
         os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = self.json_key_path
 
@@ -34,10 +34,10 @@ class ScanApproachNode(Node):
         self.mobile_base_vel_publisher = self.create_publisher(Twist,"/locobot/mobile_base/cmd_vel", 1)
 
         msg = Twist()
-        msg.angular.z = 0.5  # Set angular velocity (turn)
+        msg.angular.z = 0.1  # Set angular velocity (turn)
         # self.mobile_base_vel_publisher.publish(msg)
 
-        self.desiredObject = "Pineapple"
+        self.desiredObject = "banana"
 
         self.camera_subscription = self.create_subscription(
             Image,
@@ -58,10 +58,11 @@ class ScanApproachNode(Node):
         # Extract localized object annotations
         objects = response.localized_object_annotations
         for object in objects:
-            print("Detected object", object.name.lower())
+            # print("Detected object", object.name.lower())
             if object.name.lower() == self.desiredObject:
+                print("Found banana")
                 msg = Twist()
-                msg.linear.x = 0.5  # Set linear velocity (forward)
+                msg.linear.x = 0.1  # Set linear velocity (forward)
                 # self.mobile_base_vel_publisher.publish(msg)
                 break
 

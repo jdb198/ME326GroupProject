@@ -26,7 +26,11 @@ class AudioRecorderNode(Node):
 
         # Publish as ROS 2 message
         msg = ByteMultiArray()
-        msg.data = list(audio_bytes)  # Convert bytes to list
+        print(type(audio_bytes))
+        test = set()
+        for byte in audio_bytes:
+            test.add(byte)
+        msg.data = test  # Convert bytes to list
         self.publisher_.publish(msg)
 
         self.get_logger().info(f"Published {len(audio_bytes)} bytes of audio.")

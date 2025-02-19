@@ -7,7 +7,7 @@ from std_msgs.msg import ByteMultiArray
 from google.cloud import speech_v1p1beta1 as speech
 
 # Authenticate with Google Cloud
-os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "/content/cs-339r-9cd080ebdedf.json"  # Upload your JSON key
+os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "/home/locobot/Downloads/cs-339r-9cd080ebdedf.json"  # Upload your JSON key
 
 class AudioTranscriberNode(Node):
     def __init__(self):

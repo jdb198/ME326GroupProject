@@ -28,12 +28,14 @@ class PerceptionNode(Node):
         qos_profile.reliability = ReliabilityPolicy.BEST_EFFORT
 
         # Subscribers
-        self.create_subscription(Image, '/locobot/camera/image_raw', self.image_callback, qos_profile)
-        self.create_subscription(Image, '/locobot/camera/depth/image_raw', self.depth_callback, qos_profile)
-        self.create_subscription(CameraInfo, '/locobot/camera/camera_info', self.camera_info_callback, 10)
+        self.create_subscription(Image, '/locobot/camera/color/image_raw', self.image_callback, qos_profile)
+        self.create_subscription(Image, '/locobot/camera/depth/image_rect_raw', self.depth_callback, qos_profile)
+        self.create_subscription(CameraInfo, '/locobot/camera/color/camera_info', self.camera_info_callback, 10)
         # self.create_subscription(Odometry, "/locobot/odom", self.odom_callback, 10)
-        self.create_subscription(Odometry, "/locobot/sim_ground_truth_pose", self.odom_callback, 10)
+        # self.create_subscription(Odometry, "/locobot/sim_ground_truth_pose", self.odom_callback, 10)
+        self.create_subscription(Odometry, "/locobot/mobile_base/odom", self.odom_callback, qos_profile)
         
+
         self.prompt_sub = self.create_subscription(String, "/perception/object", self.prompt_callback, 10)
 
         self.timer = self.create_timer(0.1, self.process_if_ready)
