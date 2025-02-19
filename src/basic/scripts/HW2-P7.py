@@ -18,9 +18,12 @@ class LocobotBaseMotionTracking(Node):
     def __init__(self):
         super().__init__('locobot_base_motion_tracking')
 
+        qos_profile = QoSProfile(depth=10)
+        qos_profile.reliability = ReliabilityPolicy.BEST_EFFORT
+
         # Define publisher and subscribers
-        self.velocity_publisher = self.create_publisher(Twist, '/locobot/diffdrive_controller/cmd_vel_unstamped', 10)
-        self.odom_subscription = self.create_subscription(Odometry, '/odom', self.odom_callback, 10)
+        self.velocity_publisher = self.create_publisher(Twist, '/locobot/mobile_base/cmd_vel', 10)
+        self.odom_subscription = self.create_subscription(Odometry, '/locobot/mobile_base/odom', self.odom_callback, qos_profile)
 
         self.t_init = self.get_clock().now()  # Define the initial time
 
@@ -248,3 +251,4 @@ def main(args=None):
 # Run main function
 if __name__ == '__main__':
     main()
+
