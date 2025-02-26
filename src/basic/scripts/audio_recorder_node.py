@@ -26,11 +26,9 @@ class AudioRecorderNode(Node):
 
         # Publish as ROS 2 message
         msg = ByteMultiArray()
-        print(type(audio_bytes))
-        test = set()
-        for byte in audio_bytes:
-            test.add(byte)
-        msg.data = test  # Convert bytes to list
+        # Convert bytes to a list of integers
+        # This is the key fix - properly convert bytes to a list format ROS can handle
+        msg.data = list(audio_bytes)  # Convert bytes to list of integers
         self.publisher_.publish(msg)
 
         self.get_logger().info(f"Published {len(audio_bytes)} bytes of audio.")
