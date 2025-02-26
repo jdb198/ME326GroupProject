@@ -6,16 +6,11 @@ from rclpy.node import Node
 from geometry_msgs.msg import Pose, Twist, Point
 from nav_msgs.msg import Odometry
 import numpy as np
-import csv
-import matplotlib.pyplot as plt
-import os
-from rclpy.serialization import serialize_message
-import rosbag2_py
 from rclpy.qos import QoSProfile, ReliabilityPolicy
 from visualization_msgs.msg import Marker
 
 class LocobotBaseMotionTracking(Node):
-    def __init__(self):
+    def __init__(self, target_pose=None):
         super().__init__('locobot_base_motion_tracking')
 
         qos_profile = QoSProfile(depth=10)
@@ -33,14 +28,20 @@ class LocobotBaseMotionTracking(Node):
         self.x_odom = 0
         self.y_odom = 0
 
-        self.target_pose = Pose()
-        self.target_pose.position.x = 1.0
-        self.target_pose.position.y = -1.0
+        # Define goal pose
+        if type(target_pose) == type(None):
+            self.target_pose = Pose()
+            self.target_pose.position.x = 1.0
+            self.target_pose.position.y = -1.0
 
-        self.target_pose.orientation.x = 0.0
-        self.target_pose.orientation.y = 0.0
-        self.target_pose.orientation.z = 0.0
-        self.target_pose.orientation.w = 1.0 # cos(theta/2)
+            self.target_pose.orientation.x = 0.0
+            self.target_pose.orientation.y = 0.0
+            self.target_pose.orientation.z = 0.0
+            self.target_pose.orientation.w = 1.0 # cos(theta/2)
+        elif type(target_pose) != type(Pose()):
+            self.get_logger().info("Incorrect type for target pose, expects geometry_msgs Pose type") #send error msg if wrong type is send to go_to_pose
+        else:
+            self.target_pose = target_pose
 
         # This is the distance of the point P (x,y) that will be controlled for position. The locobot base_link frame points 
         # forward in the positive x direction, the point P will be on the positive x-axis in the body-fixed frame of the robot 
@@ -97,7 +98,6 @@ class LocobotBaseMotionTracking(Node):
         marker.scale.y = 0.1 #arrow width
         marker.scale.z = 0.1 #arrow height
         
-
         # Set the marker pose
         marker.pose.position.x = self.target_pose.position.x  # center of the sphere in base_link frame
         marker.pose.position.y = self.target_pose.position.y
@@ -150,6 +150,9 @@ class LocobotBaseMotionTracking(Node):
         point_P.y = self.y_odom + self.L*R21
         point_P.z = 0.1 #make it hover just above the ground (10cm)
         
+        self.pub_point_P_marker()
+        self.pub_target_point_marker()
+
         # Compute errors and put them in a vector
         err_x = self.target_pose.position.x - point_P.x
         err_y = self.target_pose.position.y - point_P.y
@@ -196,18 +199,41 @@ class LocobotBaseMotionTracking(Node):
 
         print("err magnitude",err_magnitude)
 
+        # Step 4: Finally, once point B has been reached, then return back to point A and vice versa      
         if err_magnitude < self.goal_reached_error:
-            self.integrated_error_list = []
-            self.get_logger().info("Reached the goal point")
-            return
+            current_yaw = np.arctan2(2 * (qw * qz + qx * qy), 1 - 2 * (qy**2 + qz**2))
+    
+            # Extract target orientation yaw
+            target_yaw = np.arctan2(2 * (self.target_pose.orientation.w * self.target_pose.orientation.z), 1 - 2 * (self.target_pose.orientation.z ** 2))
 
-        # # Append the odometry and time data to the data array
-        # self.data.append([t, self.x_odom, self.y_odom])
+            angle_error = target_yaw - current_yaw
 
-        # # Send the odometry and time data to the bag file
-        # odom_serialized = serialize_message(odom_msg)
-        # self.writer.write('/locobot/recorded_odom', odom_serialized, self.get_clock().now().nanoseconds)
+            # Normalize angle to [-π, π]
+            angle_error = np.arctan2(np.sin(angle_error), np.cos(angle_error))
 
+            # If orientation error is significant, rotate to fix it
+            if abs(angle_error) > 0.05:  # Threshold to prevent oscillations
+                control_msg = Twist()
+                control_msg.linear.x = 0.0  # Stop moving forward
+                # Increase the turning speed (higher gain)
+                Kp_turn = 2.0  # Increase this value for faster turning
+                max_turn_speed = 2.0  # Set a maximum turn speed (rad/s)
+                min_turn_speed = 0.6  # Ensure minimum turn speed
+
+                control_msg.angular.z = Kp_turn * angle_error
+
+                # Clamp the angular speed within min and max limits
+                control_msg.angular.z = max(min_turn_speed, min(max_turn_speed, abs(control_msg.angular.z))) * np.sign(control_msg.angular.z)
+
+                self.mobile_base_vel_publisher.publish(control_msg)
+                print(f"angular error magnitude: {angle_error:.2f} rad")
+                return
+            else:
+                #reset the integrated error: 
+                self.integrated_error_list = []
+                print("Reached goal")
+                return
+        
         # Report the data to the user for inspection
         # self.get_logger().info(f'Odometry: ({self.x_odom:.2f}, {self.y_odom:.2f}), Target: ({self.x_current:.2f}, {self.y_current:.2f}), Error: ({err_x:.2f}, {err_y:.2f}), Kp: {self.Kp}')
         print("err magnitude",err_magnitude)
