@@ -15,6 +15,8 @@ import numpy as np
 import cv2 #Only for debugging
 from scipy.spatial.transform import Rotation
 
+from utils.align_depth_fncs import align_depth
+
 class PerceptionNode(Node):
     def __init__(self):
         super().__init__('perception_node')
@@ -31,6 +33,7 @@ class PerceptionNode(Node):
         self.create_subscription(Image, '/locobot/camera/color/image_raw', self.image_callback, qos_profile)
         self.create_subscription(Image, '/locobot/camera/depth/image_rect_raw', self.depth_callback, qos_profile)
         self.create_subscription(CameraInfo, '/locobot/camera/color/camera_info', self.camera_info_callback, 10)
+        self.create_subscription(CameraInfo, '/locobot/camera/depth/camera_info', self.camera_depth_info_callback, 10)
         # self.create_subscription(Odometry, "/locobot/odom", self.odom_callback, 10)
         # self.create_subscription(Odometry, "/locobot/sim_ground_truth_pose", self.odom_callback, 10)
         self.create_subscription(Odometry, "/locobot/mobile_base/odom", self.odom_callback, qos_profile)
@@ -52,6 +55,7 @@ class PerceptionNode(Node):
         self.latest_rgb = None
         self.latest_depth = None
         self.latest_camera_info = None
+        self.latest_depth_camera_info = None
         self.latest_odom = None
         self.current_prompt = None
 
@@ -69,6 +73,9 @@ class PerceptionNode(Node):
 
     def camera_info_callback(self, msg):
         self.latest_camera_info = msg
+
+    def camera_depth_info_callback(self, msg):
+        self.latest_depth_camera_info = msg
 
     def odom_callback(self, msg):
         self.latest_odom = msg
@@ -102,7 +109,7 @@ class PerceptionNode(Node):
         # Convert images
         rgb_image = self.bridge.imgmsg_to_cv2(rgb_msg, "bgr8")
         
-        # Run VLM (Grounding DINO + SAM2)
+        # Run VLM (??)
         # TODO Get pixel values from VLM
 
         # For Debugging
