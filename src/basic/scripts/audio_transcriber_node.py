@@ -22,11 +22,14 @@ class AudioTranscriberNode(Node):
         filename = "/tmp/received_audio.wav"
         sample_rate = 16000
 
+        # Convert list of integers back to bytes
+        audio_bytes = bytes(msg.data)
+
         with wave.open(filename, 'wb') as wf:
             wf.setnchannels(1)
             wf.setsampwidth(2)  # 16-bit PCM
             wf.setframerate(sample_rate)
-            wf.writeframes(bytes(msg.data))
+            wf.writeframes(audio_bytes)
 
         self.get_logger().info(f"Saved received audio to {filename}")
 
