@@ -3,7 +3,7 @@ from rclpy.node import Node
 import wave
 import numpy as np
 import os
-from std_msgs.msg import ByteMultiArray
+from std_msgs.msg import ByteMultiArray, UInt8MultiArray
 from google.cloud import speech_v1p1beta1 as speech
 
 # Authenticate with Google Cloud
@@ -12,7 +12,7 @@ os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "/home/locobot/Downloads/cs-339r-
 class AudioTranscriberNode(Node):
     def __init__(self):
         super().__init__('audio_transcriber')
-        self.subscription = self.create_subscription(ByteMultiArray, 'audio_data', self.audio_callback, 10)
+        self.subscription = self.create_subscription(UInt8MultiArray, 'audio_data', self.audio_callback, 10)
         self.get_logger().info("Audio transcriber node started. Listening for audio data...")
 
     def audio_callback(self, msg):
