@@ -34,8 +34,8 @@ class LocobotBaseMotionTracking(Node):
         self.y_odom = 0
 
         self.target_pose = Pose()
-        self.target_pose.position.x = 2.0
-        self.target_pose.position.y = -2.0
+        self.target_pose.position.x = 1.0
+        self.target_pose.position.y = -1.0
 
         self.target_pose.orientation.x = 0.0
         self.target_pose.orientation.y = 0.0
@@ -55,29 +55,9 @@ class LocobotBaseMotionTracking(Node):
         # self.integrated_error_factor = 1.0 #multiply this by accumulated error, this is the Ki (integrated error) gain
         self.integrated_error_list = []
         self.length_of_integrated_error_list = 20
-        self.goal_reached_error = 0.05
-
-        # # Initialize data array and prepare the CSV and bag files for export
-        # self.data = [] 
-        # self.csv_file_path = os.path.expanduser('~/bags/locobot_odom_data.csv')
-        # self.bag_file_path = os.path.expanduser('~/bags/locobot_odom')
-        # os.makedirs(os.path.dirname(self.csv_file_path), exist_ok=True)
-
-        # # Define the rosbag2 variables and run the bag writer finctions
-        # self.writer = rosbag2_py.SequentialWriter()
-        # storage_options = rosbag2_py.StorageOptions(uri=self.bag_file_path, storage_id='sqlite3')
-        # converter_options = rosbag2_py.ConverterOptions(input_serialization_format='', output_serialization_format='')
-        # self.writer.open(storage_options, converter_options)
-        # self.writer.create_topic(rosbag2_py.TopicMetadata(name='/locobot/recorded_odom', type='nav_msgs/msg/Odometry', serialization_format='cdr'))
+        self.goal_reached_error = 0.01
 
         self.get_logger().info('The velocity_publisher node has started.')  # Relay node start message to user
-
-    # Function to calculate the x and y position of the locobot at a given time
-    # def calc_traj(self, t):
-    #     x = 0.5 * np.cos((2 * np.pi * t) / 10)
-    #     y = 0.5 * np.sin((2 * np.pi * t) / 10)
-
-    #     return x, y
 
     def pub_point_P_marker(self):
         #this is very simple because we are just putting the point P in the base_link frame (it is static in this frame)
@@ -190,7 +170,7 @@ class LocobotBaseMotionTracking(Node):
         for err in self.integrated_error_list:
             self.integrated_error = self.integrated_error + err
 
-        point_p_error_signal = Kp_mat * error_vect  + Ki_mat * self.integrated_error # Find the point error signal
+        point_p_error_signal = Kp_mat * error_vect + Ki_mat * self.integrated_error # Find the point error signal
 
         # Define non-holonomic matrix and find the control input matrix
         non_holonomic_mat = np.matrix([[np.cos(current_angle), -self.L*np.sin(current_angle)], [np.sin(current_angle), self.L * np.cos(current_angle)]])
@@ -214,7 +194,11 @@ class LocobotBaseMotionTracking(Node):
 
         self.velocity_publisher.publish(control_msg)
 
+        print("err magnitude",err_magnitude)
+
         if err_magnitude < self.goal_reached_error:
+            self.integrated_error_list = []
+            self.get_logger().info("Reached the goal point")
             return
 
         # # Append the odometry and time data to the data array
@@ -225,15 +209,8 @@ class LocobotBaseMotionTracking(Node):
         # self.writer.write('/locobot/recorded_odom', odom_serialized, self.get_clock().now().nanoseconds)
 
         # Report the data to the user for inspection
-        self.get_logger().info(f'Odometry: ({self.x_odom:.2f}, {self.y_odom:.2f}), Target: ({self.x_current:.2f}, {self.y_current:.2f}), Error: ({err_x:.2f}, {err_y:.2f}), Kp: {self.Kp}')
-
-    # # Function to export the CSV file
-    # def export_csv(self):
-    #     with open(self.csv_file_path, 'w', newline='') as f:
-    #         writer = csv.writer(f)
-    #         writer.writerow(['Time', 'X_Val', 'Y_Val'])
-    #         writer.writerows(self.data)
-    #     self.get_logger().info(f'Data saved to {self.csv_file_path}')
+        # self.get_logger().info(f'Odometry: ({self.x_odom:.2f}, {self.y_odom:.2f}), Target: ({self.x_current:.2f}, {self.y_current:.2f}), Error: ({err_x:.2f}, {err_y:.2f}), Kp: {self.Kp}')
+        print("err magnitude",err_magnitude)
 
 # Main function to control the node
 def main(args=None):
@@ -251,4 +228,3 @@ def main(args=None):
 # Run main function
 if __name__ == '__main__':
     main()
-
