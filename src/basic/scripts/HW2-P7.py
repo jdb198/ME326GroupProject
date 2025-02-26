@@ -218,7 +218,7 @@ class LocobotBaseMotionTracking(Node):
                 # Increase the turning speed (higher gain)
                 Kp_turn = 2.0  # Increase this value for faster turning
                 max_turn_speed = 2.0  # Set a maximum turn speed (rad/s)
-                min_turn_speed = 0.6  # Ensure minimum turn speed
+                min_turn_speed = 0.4  # Ensure minimum turn speed
 
                 control_msg.angular.z = Kp_turn * angle_error
 
