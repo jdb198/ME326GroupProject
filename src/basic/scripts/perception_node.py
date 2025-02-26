@@ -1,7 +1,9 @@
 import rclpy
+import rclpy.duration
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy
 
+import rclpy.time
 from sensor_msgs.msg import Image, CameraInfo
 from nav_msgs.msg import Odometry
 from std_msgs.msg import String
@@ -22,7 +24,8 @@ class PerceptionNode(Node):
         super().__init__('perception_node')
 
         # TF Buffer and Listener
-        self.tf_buffer = tf2_ros.Buffer()
+        buffer_length = rclpy.duration.Duration(seconds=10.0)
+        self.tf_buffer = tf2_ros.Buffer(cache_time=buffer_length)
         self.tf_listener = tf2_ros.TransformListener(self.tf_buffer, self)
 
         # Define QoS profile for direct subscriptions
@@ -49,7 +52,7 @@ class PerceptionNode(Node):
 
         # Frames
         self.base_link_frame = "locobot/base_link"
-        self.camera_frame = "camera_locobot_link"
+        self.camera_frame = "camera_color_frame" #"camera_locobot_link"
 
         # State variables
         self.latest_rgb = None
@@ -67,9 +70,12 @@ class PerceptionNode(Node):
 
     def image_callback(self, msg):
         self.latest_rgb = msg
+        print("Image timestamp :", self.latest_rgb.header.stamp)
+        print("Checkign transform availability: ", self.tf_buffer.can_transform(self.base_link_frame, self.camera_frame, self.latest_rgb.header.stamp))
 
     def depth_callback(self, msg):
         self.latest_depth = msg
+        print("Depth timestamp :", self.latest_depth.header.stamp)
 
     def camera_info_callback(self, msg):
         self.latest_camera_info = msg
@@ -79,6 +85,8 @@ class PerceptionNode(Node):
 
     def odom_callback(self, msg):
         self.latest_odom = msg
+        print("Checking at :", self.latest_odom.header.stamp)
+        print("Checkign transform availability in ODOM callback: ", self.tf_buffer.can_transform(self.base_link_frame, self.camera_frame, self.latest_odom.header.stamp))
     
     def prompt_callback(self, msg):
         """ Store the user-given prompt and trigger processing """
@@ -113,20 +121,21 @@ class PerceptionNode(Node):
         # TODO Get pixel values from VLM
 
         # For Debugging
-        pixel_x, pixel_y = [500, 240]
+        pixel_x, pixel_y = [400, 240]
         debug_image = rgb_image.copy()
         cv2.circle(debug_image, (pixel_x, pixel_y), 5, (0, 0, 255), -1)
         debug_img_msg = self.bridge.cv2_to_imgmsg(debug_image, "bgr8")
         debug_img_msg.header = rgb_msg.header
         self.debug_image_pub.publish(debug_img_msg)
 
-        depth_image = self.bridge.imgmsg_to_cv2(depth_msg, "32FC1")   # Depth in meters
-        depth = depth_image[int(pixel_y), int(pixel_x)]
+        depth_image = self.bridge.imgmsg_to_cv2(depth_msg, "16UC1")   # Depth in meters
+        depth = depth_image[int(pixel_y), int(pixel_x)]/1000.0
         camera_coords = self.pixel_to_camera(pixel_x, pixel_y, depth, camera_info_msg)
         self.get_logger().info(f"Converted Camera Coordinates: {camera_coords[0]}, {camera_coords[1]}, {camera_coords[2]}")
         camera_coords = np.array([camera_coords[2], -1 * camera_coords[0], -1 * camera_coords[1]])
 
-        timestamp = odom_msg.header.stamp
+        # timestamp = odom_msg.header.stamp
+        timestamp = rgb_msg.header.stamp
         base_pose = odom_msg.pose.pose
         world_coords = self.camera_to_world(camera_coords, base_pose, timestamp)
 
@@ -142,10 +151,17 @@ class PerceptionNode(Node):
 
     def pixel_to_camera(self, pixel_x, pixel_y, depth, camera_info_msg):
         """ Convert pixel coordinates to camera frame (3D point) """
-        fx = 620 #camera_info_msg.k[0]  # Focal length x
-        fy = 620 #camera_info_msg.k[4]  # Focal length y
-        cx = 320 #camera_info_msg.k[2]  # Principal point x
-        cy = 240 #camera_info_msg.k[5]  # Principal point y
+        fx = 620 # Focal length x
+        fy = 620 # Focal length y
+        cx = 320 # Principal point x
+        cy = 240 # Principal point y
+
+        fx = camera_info_msg.k[0]  # Focal length x
+        fy = camera_info_msg.k[4]  # Focal length y
+        cx = camera_info_msg.k[2]  # Principal point x
+        cy = camera_info_msg.k[5]  # Principal point y
+
+        print(fx, fy, cx, cy)
 
         # Compute 3D position in camera frame
         x = (pixel_x - cx) * depth / fx
@@ -157,6 +173,8 @@ class PerceptionNode(Node):
         """ Convert camera coordinates to world coordinates using /locobot/odom and TF """
         try:
             # Get transform from base_link → camera_link
+            print("Checking at :", timestamp)
+            print("Checkign transform availability: ", self.tf_buffer.can_transform(self.base_link_frame, self.camera_frame, timestamp))
             base_to_camera = self.tf_buffer.lookup_transform(self.base_link_frame, self.camera_frame, timestamp, rclpy.duration.Duration(seconds=1.0))
 
             # Convert odometry pose (base_link in locobot/odom) to matrix
