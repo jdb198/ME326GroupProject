@@ -70,12 +70,9 @@ class PerceptionNode(Node):
 
     def image_callback(self, msg):
         self.latest_rgb = msg
-        print("Image timestamp :", self.latest_rgb.header.stamp)
-        print("Checkign transform availability: ", self.tf_buffer.can_transform(self.base_link_frame, self.camera_frame, self.latest_rgb.header.stamp))
 
     def depth_callback(self, msg):
         self.latest_depth = msg
-        print("Depth timestamp :", self.latest_depth.header.stamp)
 
     def camera_info_callback(self, msg):
         self.latest_camera_info = msg
@@ -85,8 +82,6 @@ class PerceptionNode(Node):
 
     def odom_callback(self, msg):
         self.latest_odom = msg
-        print("Checking at :", self.latest_odom.header.stamp)
-        print("Checkign transform availability in ODOM callback: ", self.tf_buffer.can_transform(self.base_link_frame, self.camera_frame, self.latest_odom.header.stamp))
     
     def prompt_callback(self, msg):
         """ Store the user-given prompt and trigger processing """
@@ -114,12 +109,13 @@ class PerceptionNode(Node):
 
     def process_image(self, rgb_msg, depth_msg, camera_info_msg, odom_msg, prompt):
         self.get_logger().info("Image Processing Started")
-        # Get transform from base_link → camera_link
-        base_to_camera = self.get_transform(self.base_link_frame, self.camera_frame, timestamp)
-        if not base_to_camera:
+        # Get transform from camera frame to base link frame
+        camera_to_base = self.get_transform(self.camera_frame, self.base_link_frame, timestamp)
+        if not camera_to_base:
             print("Failed to find the desired base_to_camera tf. Will try later....")
             return
 
+        print("RGB image reference frame: ", rgb_msg.header.frame_id)
         # Convert images
         rgb_image = self.bridge.imgmsg_to_cv2(rgb_msg, "bgr8")
         
@@ -134,20 +130,20 @@ class PerceptionNode(Node):
         debug_img_msg.header = rgb_msg.header
         self.debug_image_pub.publish(debug_img_msg)
 
+        print("Depth image reference frame: ", depth_msg.header.frame_id)
         depth_image = self.bridge.imgmsg_to_cv2(depth_msg, "16UC1")   # Depth in milimeters
+        # In case depth alignment is requried
+        # depth_image = self.get_depth_aligned_with_rgb(depth_image, rgb_image)
+        
         depth = depth_image[int(pixel_y), int(pixel_x)]/1000.0
         camera_coords = self.pixel_to_camera(pixel_x, pixel_y, depth, camera_info_msg)
         self.get_logger().info(f"Converted Camera Coordinates: {camera_coords[0]}, {camera_coords[1]}, {camera_coords[2]}")
-        camera_coords = np.array([camera_coords[2], -1 * camera_coords[0], -1 * camera_coords[1]])
+        # camera_coords = np.array([camera_coords[2], -1 * camera_coords[0], -1 * camera_coords[1]]) # to manually convert in simulation
 
-        # timestamp = odom_msg.header.stamp
         timestamp = rgb_msg.header.stamp
         base_pose = odom_msg.pose.pose
-        world_coords = self.camera_to_world(camera_coords, base_pose, base_to_camera)
-
-        if world_coords is None:
-            self.get_logger().warn("Failed to convert to world coordinate.. Trying again...")
-            return
+        print("Robot base pose: " base_pose)
+        world_coords = self.camera_to_world(camera_coords, base_pose, camera_to_base)
 
         self.get_logger().info(f"Converted World Coordinates: {world_coords[0]}, {world_coords[1]}, {world_coords[2]}")
         self.publish_debug_marker(world_coords)
@@ -157,10 +153,11 @@ class PerceptionNode(Node):
 
     def get_transform(self, ref_frame, target_frame, timestamp = self.latest_rgb.header.stamp, timeout_margin = 1.0):
         try:
-            # Get transform from base_link → camera_link
-            print("Finding transformation at :", timestamp)
-            print("Checking transform availability: ", self.tf_buffer.can_transform(self.base_link_frame, self.camera_frame, timestamp))
-            ref_to_target = self.tf_buffer.lookup_transform(ref_frame, target_frame, timestamp, rclpy.duration.Duration(seconds=timeout_margin))
+            # Get transform from ref_frame to target_frame
+            print("Finding transformation at :", timestamp, " from ", ref_frame, " to ", target_frame)
+            print("Checking transform availability: ", self.tf_buffer.can_transform(target_frame, ref_frame, timestamp))
+            ref_to_target = self.tf_buffer.lookup_transform(target_frame, ref_frame, timestamp, rclpy.duration.Duration(seconds=timeout_margin))
+            print("Successfully found Transform")
             return ref_to_target
         except tf2_ros.LookupException:
             self.get_logger().warn("Transform not found.")
@@ -172,6 +169,11 @@ class PerceptionNode(Node):
             self.get_logger().warn("Extrapolation issue.")
             return None
     
+    def get_depth_aligned_with_rgb(self, depth_img, rgb_img, cam2cam_transform = np.eye(4)):
+        depth_K = (self.latest_depth_camera_info.k[0], self.latest_depth_camera_info.k[4], self.latest_depth_camera_info.k[2], self.latest_depth_camera_info.k[5])
+        rgb_K = (self.latest_camera_info.k[0], self.latest_camera_info.k[4], self.latest_camera_info.k[2], self.latest_camera_info.k[5])
+        return align_depth(depth_img, depth_K, rgb_img, rgb_K, cam2cam_transform)
+
     def pixel_to_camera(self, pixel_x, pixel_y, depth, camera_info_msg):
         """ Convert pixel coordinates to camera frame (3D point) """
         # fx = 620 # Focal length x
@@ -192,16 +194,16 @@ class PerceptionNode(Node):
         z = depth
         return np.array([x, y, z])
 
-    def camera_to_world(self, camera_coords, base_pose, base_to_camera):
+    def camera_to_world(self, camera_coords, base_pose, camera_to_base):
         """ Convert camera coordinates to world coordinates using /locobot/odom and TF """
         # Convert odometry pose (base_link in locobot/odom) to matrix
-        odom_to_base_matrix = self.pose_to_matrix(base_pose)
+        base_to_odom_matrix = self.pose_to_matrix(base_pose)
 
         # Convert base_link → camera_link transform to matrix
-        base_to_camera_matrix = self.transform_to_matrix(base_to_camera)
+        camera_to_base_matrix = self.transform_to_matrix(camera_to_base)
 
         # Compute camera-to-world transformation
-        camera_to_world_matrix = odom_to_base_matrix @ base_to_camera_matrix
+        camera_to_world_matrix = base_to_odom_matrix @ camera_to_base_matrix
 
         # Convert camera point to world frame
         camera_coords_homogeneous = np.append(camera_coords, 1)  # Convert to (x, y, z, 1)
