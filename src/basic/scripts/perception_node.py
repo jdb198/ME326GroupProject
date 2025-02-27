@@ -53,6 +53,7 @@ class PerceptionNode(Node):
         # Frames
         self.base_link_frame = "locobot/base_link"
         self.camera_frame = "camera_color_frame" #"camera_locobot_link"
+        self.depth_camera_frame = "camera_depth_frame"
 
         # State variables
         self.latest_rgb = None
@@ -112,10 +113,16 @@ class PerceptionNode(Node):
         # Get transform from camera frame to base link frame
         camera_to_base = self.get_transform(self.camera_frame, self.base_link_frame, timestamp)
         if not camera_to_base:
-            print("Failed to find the desired base_to_camera tf. Will try later....")
+            print("Failed to find the desired camera_to_base tf. Will try later....")
             return
-
+        
         print("RGB image reference frame: ", rgb_msg.header.frame_id)
+        print("Depth image reference frame: ", depth_msg.header.frame_id)
+        # depth_to_rgb = self.get_transform(self.depth_camera_frame, self.camera_frame, timestamp)
+        # if not depth_to_rgb:
+        #     print("Failed to find the desired depth_to_rgb tf. Will try later....")
+        #     return
+
         # Convert images
         rgb_image = self.bridge.imgmsg_to_cv2(rgb_msg, "bgr8")
         
@@ -130,10 +137,9 @@ class PerceptionNode(Node):
         debug_img_msg.header = rgb_msg.header
         self.debug_image_pub.publish(debug_img_msg)
 
-        print("Depth image reference frame: ", depth_msg.header.frame_id)
         depth_image = self.bridge.imgmsg_to_cv2(depth_msg, "16UC1")   # Depth in milimeters
         # In case depth alignment is requried
-        # depth_image = self.get_depth_aligned_with_rgb(depth_image, rgb_image)
+        # depth_image = self.get_depth_aligned_with_rgb(depth_image, rgb_image, self.transform_to_matrix(depth_to_rgb))
         
         depth = depth_image[int(pixel_y), int(pixel_x)]/1000.0
         camera_coords = self.pixel_to_camera(pixel_x, pixel_y, depth, camera_info_msg)
