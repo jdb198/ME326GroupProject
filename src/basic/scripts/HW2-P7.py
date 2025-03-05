@@ -5,6 +5,7 @@ import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import Pose, Twist, Point
 from nav_msgs.msg import Odometry
+from std_msgs.msg import Bool
 import numpy as np
 from rclpy.qos import QoSProfile, ReliabilityPolicy
 from visualization_msgs.msg import Marker
@@ -19,6 +20,7 @@ class LocobotBaseMotionTracking(Node):
         # Define publisher and subscribers
         self.velocity_publisher = self.create_publisher(Twist, '/locobot/mobile_base/cmd_vel', 10)
         self.odom_subscription = self.create_subscription(Odometry, '/locobot/mobile_base/odom', self.odom_callback, qos_profile)
+        self.next_step_publisher = self.create_publisher(bool, '/start_manipulation', 10)
 
         self.t_init = self.get_clock().now()  # Define the initial time
 
@@ -31,8 +33,8 @@ class LocobotBaseMotionTracking(Node):
         # Define goal pose
         if type(target_pose) == type(None):
             self.target_pose = Pose()
-            self.target_pose.position.x = 1.0
-            self.target_pose.position.y = -1.0
+            self.target_pose.position.x = 0.25
+            self.target_pose.position.y = -0.25
 
             self.target_pose.orientation.x = 0.0
             self.target_pose.orientation.y = 0.0
@@ -49,14 +51,21 @@ class LocobotBaseMotionTracking(Node):
         self.L = 0.1
 
         # Define Kp and Ki variables
-        self.Kp = 1.2
+        self.Kp = 1.0
         self.Ki = 0.2
 
         self.integrated_error = np.matrix([[0],[0]]) #this is the integrated error for Proportional, Integral (PI) control
         # self.integrated_error_factor = 1.0 #multiply this by accumulated error, this is the Ki (integrated error) gain
         self.integrated_error_list = []
         self.length_of_integrated_error_list = 20
-        self.goal_reached_error = 0.01
+
+        self.position_error_thresh = 0.05
+        self.angle_error_thresh = 0.05
+
+        self.err_magnitude = 0
+
+        self.position_reached = False
+        self.angle_reached = False
 
         self.get_logger().info('The velocity_publisher node has started.')  # Relay node start message to user
 
@@ -150,8 +159,8 @@ class LocobotBaseMotionTracking(Node):
         point_P.y = self.y_odom + self.L*R21
         point_P.z = 0.1 #make it hover just above the ground (10cm)
         
-        self.pub_point_P_marker()
-        self.pub_target_point_marker()
+        # self.pub_point_P_marker()
+        # self.pub_target_point_marker()
 
         # Compute errors and put them in a vector
         err_x = self.target_pose.position.x - point_P.x
@@ -173,70 +182,77 @@ class LocobotBaseMotionTracking(Node):
         for err in self.integrated_error_list:
             self.integrated_error = self.integrated_error + err
 
-        point_p_error_signal = Kp_mat * error_vect + Ki_mat * self.integrated_error # Find the point error signal
+        point_p_error_signal = Kp_mat * error_vect # + Ki_mat * self.integrated_error # Find the point error signal
 
         # Define non-holonomic matrix and find the control input matrix
         non_holonomic_mat = np.matrix([[np.cos(current_angle), -self.L*np.sin(current_angle)], [np.sin(current_angle), self.L * np.cos(current_angle)]])
         control_input = np.linalg.inv(non_holonomic_mat) * point_p_error_signal
 
-        # Proportional control: Finding the velocity and angular velocity
-        v = control_input.item(0)  # Velocity proportional to distance error
-        omega = control_input.item(1)  # Angular velocity
+        if not self.position_reached:
+            # Proportional control: Finding the velocity and angular velocity
+            v = control_input.item(0)  # Velocity proportional to distance error
+            omega = control_input.item(1)  # Angular velocity
 
-        err_magnitude = np.linalg.norm(error_vect)
-        # net_error_magnitude = np.linalg.norm(point_p_error_signal)
+            self.err_magnitude = np.linalg.norm(error_vect)
+            # net_error_magnitude = np.linalg.norm(point_p_error_signal)
+            
+            # Publish velocity message
+            control_msg = Twist()
+            control_msg.linear.x = float(v)
+            control_msg.angular.z = float(omega)
+
+            if np.linalg.norm(control_input) > 2:
+                control_msg.linear.x = control_msg.linear.x/np.linalg.norm(control_input)
+                control_msg.angular.z = control_msg.angular.z/np.linalg.norm(control_input)
+
+            self.velocity_publisher.publish(control_msg)
+
+            print("err magnitude", self.err_magnitude)
+
+        if not self.angle_reached:
+            # Step 4: Finally, once point B has been reached, then return back to point A and vice versa      
+            if self.err_magnitude < self.position_error_thresh:
+                self.position_reached = True
+
+                current_yaw = np.arctan2(2 * (qw * qz + qx * qy), 1 - 2 * (qy**2 + qz**2))
         
-        # Publish velocity message
-        control_msg = Twist()
-        control_msg.linear.x = float(v)
-        control_msg.angular.z = float(omega)
+                # Extract target orientation yaw
+                target_yaw = np.arctan2(2 * (self.target_pose.orientation.w * self.target_pose.orientation.z), 1 - 2 * (self.target_pose.orientation.z ** 2))
 
-        if np.linalg.norm(control_input) > 2:
-            control_msg.linear.x = control_msg.linear.x/np.linalg.norm(control_input)
-            control_msg.angular.z = control_msg.angular.z/np.linalg.norm(control_input)
+                angle_error = target_yaw - current_yaw
 
-        self.velocity_publisher.publish(control_msg)
+                # Normalize angle to [-π, π]
+                angle_error = np.arctan2(np.sin(angle_error), np.cos(angle_error))
 
-        print("err magnitude",err_magnitude)
+                # If orientation error is significant, rotate to fix it
+                if abs(angle_error) > self.angle_error_thresh:  # Threshold to prevent oscillations
+                    control_msg = Twist()
+                    control_msg.linear.x = 0.0  # Stop moving forward
+                    # Increase the turning speed (higher gain)
+                    Kp_turn = 1.0  # Increase this value for faster turning
+                    max_turn_speed = 1.5  # Set a maximum turn speed (rad/s)
+                    min_turn_speed = 0.2  # Ensure minimum turn speed
 
-        # Step 4: Finally, once point B has been reached, then return back to point A and vice versa      
-        if err_magnitude < self.goal_reached_error:
-            current_yaw = np.arctan2(2 * (qw * qz + qx * qy), 1 - 2 * (qy**2 + qz**2))
-    
-            # Extract target orientation yaw
-            target_yaw = np.arctan2(2 * (self.target_pose.orientation.w * self.target_pose.orientation.z), 1 - 2 * (self.target_pose.orientation.z ** 2))
+                    control_msg.angular.z = Kp_turn * angle_error
 
-            angle_error = target_yaw - current_yaw
+                    # Clamp the angular speed within min and max limits
+                    control_msg.angular.z = max(min_turn_speed, min(max_turn_speed, abs(control_msg.angular.z))) * np.sign(control_msg.angular.z)
 
-            # Normalize angle to [-π, π]
-            angle_error = np.arctan2(np.sin(angle_error), np.cos(angle_error))
-
-            # If orientation error is significant, rotate to fix it
-            if abs(angle_error) > 0.05:  # Threshold to prevent oscillations
-                control_msg = Twist()
-                control_msg.linear.x = 0.0  # Stop moving forward
-                # Increase the turning speed (higher gain)
-                Kp_turn = 2.0  # Increase this value for faster turning
-                max_turn_speed = 2.0  # Set a maximum turn speed (rad/s)
-                min_turn_speed = 0.4  # Ensure minimum turn speed
-
-                control_msg.angular.z = Kp_turn * angle_error
-
-                # Clamp the angular speed within min and max limits
-                control_msg.angular.z = max(min_turn_speed, min(max_turn_speed, abs(control_msg.angular.z))) * np.sign(control_msg.angular.z)
-
-                self.mobile_base_vel_publisher.publish(control_msg)
-                print(f"angular error magnitude: {angle_error:.2f} rad")
-                return
-            else:
-                #reset the integrated error: 
-                self.integrated_error_list = []
-                print("Reached goal")
-                return
-        
-        # Report the data to the user for inspection
-        # self.get_logger().info(f'Odometry: ({self.x_odom:.2f}, {self.y_odom:.2f}), Target: ({self.x_current:.2f}, {self.y_current:.2f}), Error: ({err_x:.2f}, {err_y:.2f}), Kp: {self.Kp}')
-        print("err magnitude",err_magnitude)
+                    self.velocity_publisher.publish(control_msg)
+                    print(f"angular error magnitude: {angle_error:.2f} rad")
+                    return
+                else:
+                    #reset the integrated error: 
+                    self.angle_reached = True
+                    print("Reached goal")
+                    reach_goal_msg = Bool()
+                    reach_goal_msg.data = True
+                    self.next_step_publisher.publish(reach_goal_msg)
+                    return
+            
+            # Report the data to the user for inspection
+            # self.get_logger().info(f'Odometry: ({self.x_odom:.2f}, {self.y_odom:.2f}), Target: ({self.x_current:.2f}, {self.y_current:.2f}), Error: ({err_x:.2f}, {err_y:.2f}), Kp: {self.Kp}')
+            # print("err magnitude", err_magnitude)
 
 # Main function to control the node
 def main(args=None):
