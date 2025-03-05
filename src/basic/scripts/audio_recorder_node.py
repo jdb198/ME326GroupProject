@@ -3,12 +3,12 @@ from rclpy.node import Node
 import sounddevice as sd
 import numpy as np
 import wave
-from std_msgs.msg import ByteMultiArray
+from std_msgs.msg import ByteMultiArray, UInt8MultiArray
 
 class AudioRecorderNode(Node):
     def __init__(self):
         super().__init__('audio_recorder')
-        self.publisher_ = self.create_publisher(ByteMultiArray, 'audio_data', 10)
+        self.publisher_ = self.create_publisher(UInt8MultiArray, 'audio_data', 10)
         self.declare_parameter('record_duration', 5)  # Default: 5 sec recording
         self.record_and_publish()
 
@@ -25,10 +25,10 @@ class AudioRecorderNode(Node):
         audio_bytes = recorded_data.tobytes()
 
         # Publish as ROS 2 message
-        msg = ByteMultiArray()
+        msg = UInt8MultiArray() #ByteMultiArray()
         # Convert bytes to a list of integers
         # This is the key fix - properly convert bytes to a list format ROS can handle
-        msg.data = list(audio_bytes)  # Convert bytes to list of integers
+        msg.data = [b for b in audio_bytes]  # Convert bytes to list of integers
         self.publisher_.publish(msg)
 
         self.get_logger().info(f"Published {len(audio_bytes)} bytes of audio.")
