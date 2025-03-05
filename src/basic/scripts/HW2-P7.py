@@ -3,7 +3,7 @@
 # Import Libraries
 import rclpy
 from rclpy.node import Node
-from geometry_msgs.msg import Pose, Twist, Point
+from geometry_msgs.msg import PoseStamped, Twist, Point
 from nav_msgs.msg import Odometry
 from std_msgs.msg import Bool
 import numpy as np
@@ -21,6 +21,7 @@ class LocobotBaseMotionTracking(Node):
         self.velocity_publisher = self.create_publisher(Twist, '/locobot/mobile_base/cmd_vel', 10)
         self.odom_subscription = self.create_subscription(Odometry, '/locobot/mobile_base/odom', self.odom_callback, qos_profile)
         self.next_step_publisher = self.create_publisher(bool, '/start_manipulation', 10)
+        self.nav_pose_subscriber = self.create_subscription(PoseStamped, '/camera_pose_receive', self.posestamp_callback, qos_profile)
 
         self.t_init = self.get_clock().now()  # Define the initial time
 
@@ -32,18 +33,18 @@ class LocobotBaseMotionTracking(Node):
 
         # Define goal pose
         if type(target_pose) == type(None):
-            self.target_pose = Pose()
-            self.target_pose.position.x = 0.25
-            self.target_pose.position.y = -0.25
+            self.target_pose = PoseStamped()
+            self.target_pose.pose.position.x = 0.0
+            self.target_pose.pose.position.y = 0.0
 
-            self.target_pose.orientation.x = 0.0
-            self.target_pose.orientation.y = 0.0
-            self.target_pose.orientation.z = 0.0
-            self.target_pose.orientation.w = 1.0 # cos(theta/2)
-        elif type(target_pose) != type(Pose()):
-            self.get_logger().info("Incorrect type for target pose, expects geometry_msgs Pose type") #send error msg if wrong type is send to go_to_pose
+            self.target_pose.pose.orientation.x = 0.0
+            self.target_pose.pose.orientation.y = 0.0
+            self.target_pose.pose.orientation.z = 0.0
+            self.target_pose.pose.orientation.w = 1.0 # cos(theta/2)
+        elif type(target_pose) != type(PoseStamped()):
+            self.get_logger().info("Incorrect type for target pose, expects geometry_msgs PoseStamped type") #send error msg if wrong type is send to go_to_pose
         else:
-            self.target_pose = target_pose
+            self.target_pose = self.target_pose
 
         # This is the distance of the point P (x,y) that will be controlled for position. The locobot base_link frame points 
         # forward in the positive x direction, the point P will be on the positive x-axis in the body-fixed frame of the robot 
@@ -125,6 +126,12 @@ class LocobotBaseMotionTracking(Node):
         # Publish the marker
         self.target_pose_visual.publish(marker)
 
+    def posestamp_callback(self, pose_msg: PoseStamped):
+        self.target_pose = pose_msg.pose
+
+        self.position_reached = False
+        self.angle_reached = False
+
     # Odometry callback function
     def odom_callback(self, odom_msg: Odometry):
         # Obtain the x and y measured values from the odometry
@@ -195,11 +202,15 @@ class LocobotBaseMotionTracking(Node):
 
             self.err_magnitude = np.linalg.norm(error_vect)
             # net_error_magnitude = np.linalg.norm(point_p_error_signal)
+
+            max_turn_speed = 1.5  # Set a maximum turn speed (rad/s)
+            min_turn_speed = 0.2  # Ensure minimum turn speed
             
             # Publish velocity message
             control_msg = Twist()
             control_msg.linear.x = float(v)
-            control_msg.angular.z = float(omega)
+            control_msg.angular.z = max(min_turn_speed, min(max_turn_speed, abs(float(omega)))) * np.sign(float(omega))
+            # control_msg.angular.z = float(omega)
 
             if np.linalg.norm(control_input) > 2:
                 control_msg.linear.x = control_msg.linear.x/np.linalg.norm(control_input)
