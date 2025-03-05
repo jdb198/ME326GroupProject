@@ -20,8 +20,8 @@ class LocobotBaseMotionTracking(Node):
         # Define publisher and subscribers
         self.velocity_publisher = self.create_publisher(Twist, '/locobot/mobile_base/cmd_vel', 10)
         self.odom_subscription = self.create_subscription(Odometry, '/locobot/mobile_base/odom', self.odom_callback, qos_profile)
-        self.next_step_publisher = self.create_publisher(bool, '/start_manipulation', 10)
-        self.nav_pose_subscriber = self.create_subscription(PoseStamped, '/camera_pose_receive', self.posestamp_callback, qos_profile)
+        self.next_step_publisher = self.create_publisher(Bool, '/start_manipulation', 10)
+        self.nav_pose_subscriber = self.create_subscription(PoseStamped, '/camera_pose_receive', self.posestamp_callback, 10)
 
         self.t_init = self.get_clock().now()  # Define the initial time
 
@@ -109,13 +109,13 @@ class LocobotBaseMotionTracking(Node):
         marker.scale.z = 0.1 #arrow height
         
         # Set the marker pose
-        marker.pose.position.x = self.target_pose.position.x  # center of the sphere in base_link frame
-        marker.pose.position.y = self.target_pose.position.y
-        marker.pose.position.z = self.target_pose.position.z
-        marker.pose.orientation.x = self.target_pose.orientation.x
-        marker.pose.orientation.y = self.target_pose.orientation.y
-        marker.pose.orientation.z = self.target_pose.orientation.z
-        marker.pose.orientation.w = self.target_pose.orientation.w
+        marker.pose.position.x = self.target_pose.pose.position.x  # center of the sphere in base_link frame
+        marker.pose.position.y = self.target_pose.pose.position.y
+        marker.pose.position.z = self.target_pose.pose.position.z
+        marker.pose.orientation.x = self.target_pose.pose.orientation.x
+        marker.pose.orientation.y = self.target_pose.pose.orientation.y
+        marker.pose.orientation.z = self.target_pose.pose.orientation.z
+        marker.pose.orientation.w = self.target_pose.pose.orientation.w
 
         # Set the marker color
         marker.color.a = 1.0 #transparency
@@ -127,7 +127,8 @@ class LocobotBaseMotionTracking(Node):
         self.target_pose_visual.publish(marker)
 
     def posestamp_callback(self, pose_msg: PoseStamped):
-        self.target_pose = pose_msg.pose
+        self.get_logger().info('Pose Received')  # Relay node start message to user
+        self.target_pose = pose_msg
 
         self.position_reached = False
         self.angle_reached = False
@@ -170,8 +171,8 @@ class LocobotBaseMotionTracking(Node):
         # self.pub_target_point_marker()
 
         # Compute errors and put them in a vector
-        err_x = self.target_pose.position.x - point_P.x
-        err_y = self.target_pose.position.y - point_P.y
+        err_x = self.target_pose.pose.position.x - point_P.x
+        err_y = self.target_pose.pose.position.y - point_P.y
         error_vect = np.matrix([[err_x],[err_y]])
 
         Kp_mat = self.Kp * np.eye(2)  # Make the Kp identity matrix
@@ -228,7 +229,7 @@ class LocobotBaseMotionTracking(Node):
                 current_yaw = np.arctan2(2 * (qw * qz + qx * qy), 1 - 2 * (qy**2 + qz**2))
         
                 # Extract target orientation yaw
-                target_yaw = np.arctan2(2 * (self.target_pose.orientation.w * self.target_pose.orientation.z), 1 - 2 * (self.target_pose.orientation.z ** 2))
+                target_yaw = np.arctan2(2 * (self.target_pose.pose.orientation.w * self.target_pose.pose.orientation.z), 1 - 2 * (self.target_pose.pose.orientation.z ** 2))
 
                 angle_error = target_yaw - current_yaw
 
