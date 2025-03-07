@@ -41,6 +41,7 @@ class PerceptionNode(Node):
         self.create_subscription(Image, '/locobot/camera/depth/image_rect_raw', self.depth_callback, qos_profile)
         self.create_subscription(CameraInfo, '/locobot/camera/color/camera_info', self.camera_info_callback, 10)
         self.create_subscription(CameraInfo, '/locobot/camera/depth/camera_info', self.camera_depth_info_callback, 10)
+        self.create_subscription(Odometry, "/locobot/mobile_base/odom", self.odom_callback, qos_profile)
         # Locobot 3
         # self.create_subscription(Image, '/locobot/camera/color/image_raw', self.image_callback, qos_profile)
         # self.create_subscription(Image, '/locobot/camera/depth/image_rect_raw', self.depth_callback, qos_profile)
@@ -48,7 +49,6 @@ class PerceptionNode(Node):
         # self.create_subscription(CameraInfo, '/locobot/camera/depth/camera_info', self.camera_depth_info_callback, 10)
         # Simulation
         # self.create_subscription(Odometry, "/locobot/odom", self.odom_callback, 10)
-        self.create_subscription(Odometry, "/locobot/mobile_base/odom", self.odom_callback, qos_profile)
         
         self.prompt_sub = self.create_subscription(String, "/perception/object", self.prompt_callback, 10)
 
@@ -59,12 +59,12 @@ class PerceptionNode(Node):
         # self.object_detector = ...
 
         # Frames
-        # Locobot 1
         self.base_link_frame = "locobot/base_link"
+        # Locobot 1
         self.camera_frame = "camera_color_frame"
         self.depth_camera_frame = "camera_depth_frame"
         # Locobot 3
-        # self.camera_frame = "camera_color_optical_frame" #"camera_locobot_link"
+        # self.camera_frame = "camera_color_optical_frame"
         # self.depth_camera_frame = "camera_depth_optical_frame"
 
         # State variables
@@ -75,6 +75,7 @@ class PerceptionNode(Node):
         self.latest_odom = None
         self.current_prompt = None
         self.latest_depth2cam_extrinsic = None
+        self.need_world_coordinate = False # Always False for Locobot 3
 
         # Debugging Publishers
         self.debug_image_pub = self.create_publisher(Image, "/perception/debug_image", 10)
@@ -82,6 +83,7 @@ class PerceptionNode(Node):
 
         self.locobot = InterbotixLocobotXS(robot_model="locobot_wx250s", arm_model="mobile_wx250s")
         self.locobot.arm.go_to_home_pose()
+
         self.get_logger().info("Perception Node Successfully created")
 
     def image_callback(self, msg):
@@ -158,7 +160,7 @@ class PerceptionNode(Node):
         # TODO Get pixel values from VLM
 
         # For Debugging
-        pixel_x, pixel_y = [400, 240]
+        pixel_x, pixel_y = [400, 300]
         debug_image = rgb_image.copy()
         cv2.circle(debug_image, (pixel_x, pixel_y), 5, (0, 0, 255), -1)
         debug_img_msg = self.bridge.cv2_to_imgmsg(debug_image, "bgr8")
@@ -174,14 +176,18 @@ class PerceptionNode(Node):
         camera_coords = self.pixel_to_camera(pixel_x, pixel_y, depth, camera_info_msg)
         self.get_logger().info(f"Converted Camera Coordinates: {camera_coords[0]}, {camera_coords[1]}, {camera_coords[2]}")
         # camera_coords = np.array([camera_coords[2], -1 * camera_coords[0], -1 * camera_coords[1]]) # to manually convert in simulation
-
         timestamp = rgb_msg.header.stamp
-        base_pose = odom_msg.pose.pose
-        print("Robot base pose: " base_pose)
-        world_coords = self.camera_to_world(camera_coords, base_pose, camera_to_base)
-
-        self.get_logger().info(f"Converted World Coordinates: {world_coords[0]}, {world_coords[1]}, {world_coords[2]}")
-        self.publish_debug_marker(world_coords)
+        
+        if self.need_world_coordinate:
+            base_pose = odom_msg.pose.pose
+            print("Robot base pose: " base_pose)
+            world_coords = self.camera_to_world(camera_coords, base_pose, camera_to_base)
+            self.get_logger().info(f"Converted World Coordinates: {world_coords[0]}, {world_coords[1]}, {world_coords[2]}")
+            self.publish_debug_marker(world_coords)
+        else:
+            base_coords = self.camer_to_base(camera_coords, camera_to_base)
+            self.get_logger().info(f"Converted Base Coordinates: {base_coords[0]}, {base_coords[1]}, {base_coords[2]}")
+            self.publish_debug_marker(base_coords)
 
         # Clear the prompt after processing
         self.current_prompt = None
@@ -229,6 +235,13 @@ class PerceptionNode(Node):
         z = depth
         return np.array([x, y, z])
 
+    def camera_to_base(self, camera_coords, camera_to_base):
+        # Convert base_link → camera_link transform to matrix
+        camera_to_base_matrix = self.transform_to_matrix(camera_to_base)
+        camera_coords_homogeneous = np.append(camera_coords, 1)  # Convert to (x, y, z, 1)
+        base_coords = camera_to_base_matrix @ camera_coords_homogeneous
+        return base_coords[:3]  # Extract (x, y, z)
+    
     def camera_to_world(self, camera_coords, base_pose, camera_to_base):
         """ Convert camera coordinates to world coordinates using /locobot/odom and TF """
         # Convert odometry pose (base_link in locobot/odom) to matrix
@@ -278,8 +291,8 @@ class PerceptionNode(Node):
         matrix[:3, 3] = translation
         return matrix
 
-    def publish_debug_marker(self, world_coords):
-        """ Publish a marker in RViz at the transformed world coordinates """
+    def publish_debug_marker(self, coords):
+        """ Publish a marker in RViz at the transformed coordinates """
         marker = Marker()
         marker.header.frame_id = self.base_link_frame
         marker.header.stamp = self.get_clock().now().to_msg()
@@ -289,9 +302,9 @@ class PerceptionNode(Node):
         marker.action = Marker.ADD
 
         # Set marker position
-        marker.pose.position.x = world_coords[0]
-        marker.pose.position.y = world_coords[1]
-        marker.pose.position.z = world_coords[2]
+        marker.pose.position.x = coords[0]
+        marker.pose.position.y = coords[1]
+        marker.pose.position.z = coords[2]
 
         marker.pose.orientation.w = 1.0  # No rotation
 
