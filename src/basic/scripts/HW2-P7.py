@@ -14,6 +14,7 @@ class LocobotBaseMotionTracking(Node):
     def __init__(self, target_pose=None):
         super().__init__('locobot_base_motion_tracking')
 
+        # Set up the qos profile
         qos_profile = QoSProfile(depth=10)
         qos_profile.reliability = ReliabilityPolicy.BEST_EFFORT
 
@@ -31,7 +32,7 @@ class LocobotBaseMotionTracking(Node):
         self.x_odom = 0
         self.y_odom = 0
 
-        # Define goal pose
+        # Define the initial pose as origin
         if type(target_pose) == type(None):
             self.target_pose = PoseStamped()
             self.target_pose.pose.position.x = 0.0
@@ -42,9 +43,9 @@ class LocobotBaseMotionTracking(Node):
             self.target_pose.pose.orientation.z = 0.0
             self.target_pose.pose.orientation.w = 1.0 # cos(theta/2)
         elif type(target_pose) != type(PoseStamped()):
-            self.get_logger().info("Incorrect type for target pose, expects geometry_msgs PoseStamped type") #send error msg if wrong type is send to go_to_pose
+            self.get_logger().info("Incorrect type for target pose, expects geometry_msgs PoseStamped type") # Send error msg if wrong type is send to go_to_pose
         else:
-            self.target_pose = self.target_pose
+            self.target_pose = target_pose
 
         # This is the distance of the point P (x,y) that will be controlled for position. The locobot base_link frame points 
         # forward in the positive x direction, the point P will be on the positive x-axis in the body-fixed frame of the robot 
@@ -55,77 +56,25 @@ class LocobotBaseMotionTracking(Node):
         self.Kp = 1.0
         self.Ki = 0.2
 
+        # Define the integrated error variables
         self.integrated_error = np.matrix([[0],[0]]) #this is the integrated error for Proportional, Integral (PI) control
         # self.integrated_error_factor = 1.0 #multiply this by accumulated error, this is the Ki (integrated error) gain
         self.integrated_error_list = []
         self.length_of_integrated_error_list = 20
 
+        # Define the position and angle error thresholds
         self.position_error_thresh = 0.05
         self.angle_error_thresh = 0.05
 
-        self.err_magnitude = 0
+        self.err_magnitude = 0  # Initialize error magnitude
 
+        # Define the boolean values on if the position or angle has been reached
         self.position_reached = False
         self.angle_reached = False
 
         self.get_logger().info('The velocity_publisher node has started.')  # Relay node start message to user
 
-    def pub_point_P_marker(self):
-        #this is very simple because we are just putting the point P in the base_link frame (it is static in this frame)
-        marker = Marker()
-        marker.header.frame_id = "locobot/base_link"
-        marker.header.stamp = self.get_clock().now().to_msg() #used to be in ROS1: rospy.Time.now()
-        marker.id = 0
-        marker.type = Marker.SPHERE
-        # Set the marker scale
-        marker.scale.x = 0.1  # radius of the sphere
-        marker.scale.y = 0.1
-        marker.scale.z = 0.1
-
-        # Set the marker pose
-        marker.pose.position.x = self.L  # center of the sphere in base_link frame
-        marker.pose.position.y = 0.0
-        marker.pose.position.z = 0.0
-
-        # Set the marker color
-        marker.color.a = 1.0 #transparency
-        marker.color.r = 1.0 #red
-        marker.color.g = 0.0
-        marker.color.b = 0.0
-
-        # Publish the marker
-        self.point_P_control_point_visual.publish(marker)
-
-    def pub_target_point_marker(self):
-        #this is putting the marker in the world frame (http://wiki.ros.org/rviz/DisplayTypes/Marker#Points_.28POINTS.3D8.29)
-        marker = Marker()
-        marker.header.frame_id = "locobot/odom" #this will be the world frame for the real robot
-        marker.header.stamp = self.get_clock().now().to_msg()
-        marker.id = 0
-        marker.type = Marker.ARROW
-        # Set the marker scale
-        marker.scale.x = 0.3  # arrow length
-        marker.scale.y = 0.1 #arrow width
-        marker.scale.z = 0.1 #arrow height
-        
-        # Set the marker pose
-        marker.pose.position.x = self.target_pose.pose.position.x  # center of the sphere in base_link frame
-        marker.pose.position.y = self.target_pose.pose.position.y
-        marker.pose.position.z = self.target_pose.pose.position.z
-        marker.pose.orientation.x = self.target_pose.pose.orientation.x
-        marker.pose.orientation.y = self.target_pose.pose.orientation.y
-        marker.pose.orientation.z = self.target_pose.pose.orientation.z
-        marker.pose.orientation.w = self.target_pose.pose.orientation.w
-
-        # Set the marker color
-        marker.color.a = 1.0 #transparency
-        marker.color.r = 0.0 #red
-        marker.color.g = 1.0
-        marker.color.b = 0.0
-
-        # Publish the marker
-        self.target_pose_visual.publish(marker)
-
+    # Posestamp callback function
     def posestamp_callback(self, pose_msg: PoseStamped):
         self.get_logger().info('Pose Received')  # Relay node start message to user
         self.target_pose = pose_msg
@@ -265,6 +214,66 @@ class LocobotBaseMotionTracking(Node):
             # Report the data to the user for inspection
             # self.get_logger().info(f'Odometry: ({self.x_odom:.2f}, {self.y_odom:.2f}), Target: ({self.x_current:.2f}, {self.y_current:.2f}), Error: ({err_x:.2f}, {err_y:.2f}), Kp: {self.Kp}')
             # print("err magnitude", err_magnitude)
+
+    """
+
+    def pub_point_P_marker(self):
+        #this is very simple because we are just putting the point P in the base_link frame (it is static in this frame)
+        marker = Marker()
+        marker.header.frame_id = "locobot/base_link"
+        marker.header.stamp = self.get_clock().now().to_msg() #used to be in ROS1: rospy.Time.now()
+        marker.id = 0
+        marker.type = Marker.SPHERE
+        # Set the marker scale
+        marker.scale.x = 0.1  # radius of the sphere
+        marker.scale.y = 0.1
+        marker.scale.z = 0.1
+
+        # Set the marker pose
+        marker.pose.position.x = self.L  # center of the sphere in base_link frame
+        marker.pose.position.y = 0.0
+        marker.pose.position.z = 0.0
+
+        # Set the marker color
+        marker.color.a = 1.0 #transparency
+        marker.color.r = 1.0 #red
+        marker.color.g = 0.0
+        marker.color.b = 0.0
+
+        # Publish the marker
+        self.point_P_control_point_visual.publish(marker)
+
+    def pub_target_point_marker(self):
+        #this is putting the marker in the world frame (http://wiki.ros.org/rviz/DisplayTypes/Marker#Points_.28POINTS.3D8.29)
+        marker = Marker()
+        marker.header.frame_id = "locobot/odom" #this will be the world frame for the real robot
+        marker.header.stamp = self.get_clock().now().to_msg()
+        marker.id = 0
+        marker.type = Marker.ARROW
+        # Set the marker scale
+        marker.scale.x = 0.3  # arrow length
+        marker.scale.y = 0.1 #arrow width
+        marker.scale.z = 0.1 #arrow height
+        
+        # Set the marker pose
+        marker.pose.position.x = self.target_pose.pose.position.x  # center of the sphere in base_link frame
+        marker.pose.position.y = self.target_pose.pose.position.y
+        marker.pose.position.z = self.target_pose.pose.position.z
+        marker.pose.orientation.x = self.target_pose.pose.orientation.x
+        marker.pose.orientation.y = self.target_pose.pose.orientation.y
+        marker.pose.orientation.z = self.target_pose.pose.orientation.z
+        marker.pose.orientation.w = self.target_pose.pose.orientation.w
+
+        # Set the marker color
+        marker.color.a = 1.0 #transparency
+        marker.color.r = 0.0 #red
+        marker.color.g = 1.0
+        marker.color.b = 0.0
+
+        # Publish the marker
+        self.target_pose_visual.publish(marker)"
+
+    """
 
 # Main function to control the node
 def main(args=None):
