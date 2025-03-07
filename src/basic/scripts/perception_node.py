@@ -8,7 +8,7 @@ from sensor_msgs.msg import Image, CameraInfo
 from nav_msgs.msg import Odometry
 from std_msgs.msg import String
 from realsense2_camera_msgs.msg import Extrinsics
-from geometry_msgs.msg import TransformStamped
+from geometry_msgs.msg import TransformStamped, PoseStamped
 from visualization_msgs.msg import Marker #Only for debugging
 
 from cv_bridge import CvBridge
@@ -37,18 +37,18 @@ class PerceptionNode(Node):
 
         # Subscribers
         # Locobot 1
-        self.create_subscription(Image, '/locobot/camera/color/image_raw', self.image_callback, qos_profile)
-        self.create_subscription(Image, '/locobot/camera/depth/image_rect_raw', self.depth_callback, qos_profile)
-        self.create_subscription(CameraInfo, '/locobot/camera/color/camera_info', self.camera_info_callback, 10)
-        self.create_subscription(CameraInfo, '/locobot/camera/depth/camera_info', self.camera_depth_info_callback, 10)
-        self.create_subscription(Extrinsics, '/locobot/camera/extrinsics/depth_to_color', self.depth2cam_ext_callback, 10)
-        
-        # Locobot 3
         # self.create_subscription(Image, '/locobot/camera/color/image_raw', self.image_callback, qos_profile)
         # self.create_subscription(Image, '/locobot/camera/depth/image_rect_raw', self.depth_callback, qos_profile)
         # self.create_subscription(CameraInfo, '/locobot/camera/color/camera_info', self.camera_info_callback, 10)
         # self.create_subscription(CameraInfo, '/locobot/camera/depth/camera_info', self.camera_depth_info_callback, 10)
+        # self.create_subscription(Extrinsics, '/locobot/camera/extrinsics/depth_to_color', self.depth2cam_ext_callback, 10)
         
+        # Locobot 3
+        self.create_subscription(Image, '/locobot/camera/camera/color/image_raw', self.image_callback, qos_profile)
+        self.create_subscription(Image, '/locobot/camera/camera/depth/image_rect_raw', self.depth_callback, qos_profile)
+        self.create_subscription(CameraInfo, '/locobot/camera/camera/color/camera_info', self.camera_info_callback, 10)
+        self.create_subscription(CameraInfo, '/locobot/camera/camera/depth/camera_info', self.camera_depth_info_callback, 10)
+        self.create_subscription(Extrinsics, '/locobot/camera/camera/extrinsics/depth_to_color', self.depth2cam_ext_callback, 10)
         self.create_subscription(Odometry, "/locobot/mobile_base/odom", self.odom_callback, qos_profile)
         # Simulation
         # self.create_subscription(Odometry, "/locobot/odom", self.odom_callback, 10)
@@ -63,8 +63,9 @@ class PerceptionNode(Node):
 
         # Frames
         self.base_link_frame = "locobot/base_link"
-        self.camera_frame = "camera_color_frame" # "camera_color_optical_frame"
-        self.depth_camera_frame = "camera_depth_frame" #"camera_depth_optical_frame"
+        self.arm_base_link_frame = "locobot/arm_base_link"
+        self.camera_frame = "camera_color_optical_frame" #"camera_color_frame" # "camera_color_optical_frame"
+        self.depth_camera_frame = "camera_depth_optical_frame" #"camera_depth_frame" #"camera_depth_optical_frame"
 
         # State variables
         self.latest_rgb = None
@@ -76,12 +77,14 @@ class PerceptionNode(Node):
         self.latest_depth2cam_extrinsic = None
         self.need_world_coordinate = False # Always False for Locobot 3
 
+        self.target_coord_pub = self.create_publisher(PoseStamped, "/perception/target_coord", 10)
+        
         # Debugging Publishers
         self.debug_image_pub = self.create_publisher(Image, "/perception/debug_image", 10)
         self.marker_pub = self.create_publisher(Marker, "/perception/debug_marker", 10)
 
         self.locobot = InterbotixLocobotXS(robot_model="locobot_wx250s", arm_model="mobile_wx250s")
-        # self.locobot.arm.go_to_home_pose()
+        self.locobot.arm.go_to_sleep_pose()
 
         self.get_logger().info("Perception Node Successfully created")
 
@@ -149,11 +152,16 @@ class PerceptionNode(Node):
         if not camera_to_base:
             print("Failed to find the desired camera_to_base tf. Will try later....")
             return
+        camera_to_arm_base = self.get_transform(self.camera_frame, self.arm_base_link_frame)
+        if not camera_to_arm_base:
+            print("Failed to find the desired camera_to_arm__base tf. Will try later....")
+            return
         
         print("RGB image reference frame: ", rgb_msg.header.frame_id)
         print("Depth image reference frame: ", depth_msg.header.frame_id)
         # depth_to_rgb = self.get_transform(self.depth_camera_frame, self.camera_frame, timestamp) # finding tf at exact timestamp is hard
         depth_to_rgb = self.get_transform(self.depth_camera_frame, self.camera_frame)
+        print(depth_to_rgb)
         if not depth_to_rgb:
             print("Failed to find the desired depth_to_rgb tf. Will try later....")
             return
@@ -165,7 +173,7 @@ class PerceptionNode(Node):
         # TODO Get pixel values from VLM
 
         # For Debugging
-        pixel_x, pixel_y = [400, 300]
+        pixel_x, pixel_y = [150, 400]
         debug_image = rgb_image.copy()
         cv2.circle(debug_image, (pixel_x, pixel_y), 5, (0, 0, 255), -1)
         debug_img_msg = self.bridge.cv2_to_imgmsg(debug_image, "bgr8")
@@ -189,12 +197,14 @@ class PerceptionNode(Node):
             world_coords = self.camera_to_world(camera_coords, base_pose, camera_to_base)
             self.get_logger().info(f"Converted World Coordinates: {world_coords[0]}, {world_coords[1]}, {world_coords[2]}")
             self.publish_debug_marker(world_coords)
+            self.publish_target_coord(world_coords)
         else:
-            base_coords = self.camera_to_base(camera_coords, camera_to_base)
-            self.get_logger().info(f"Converted Base Coordinates: {base_coords[0]}, {base_coords[1]}, {base_coords[2]}")
+            base_coords = self.camera_to_arm_base(camera_coords, camera_to_arm_base)
+            self.get_logger().info(f"Converted Arm Base Coordinates: {base_coords[0]}, {base_coords[1]}, {base_coords[2]}")
             self.publish_debug_marker(base_coords)
+            self.publish_target_coord(base_coords)
 
-        input("Waiting for robot arm confirmation")
+        # input("Waiting for robot arm confirmation")
         # self.locobot.arm.set_ee_pose_components(x=base_coords[0], y=base_coords[1], z=base_coords[2], roll=0.0, pitch=0.0)
         
         # Clear the prompt after processing
@@ -241,9 +251,9 @@ class PerceptionNode(Node):
         z = depth
         return np.array([x, y, z])
 
-    def camera_to_base(self, camera_coords, camera_to_base):
+    def camera_to_arm_base(self, camera_coords, camera_to_arm_base):
         # Convert base_link → camera_link transform to matrix
-        camera_to_base_matrix = self.transform_to_matrix(camera_to_base)
+        camera_to_base_matrix = self.transform_to_matrix(camera_to_arm_base)
         camera_coords_homogeneous = np.append(camera_coords, 1)  # Convert to (x, y, z, 1)
         base_coords = camera_to_base_matrix @ camera_coords_homogeneous
         return base_coords[:3]  # Extract (x, y, z)
@@ -297,6 +307,13 @@ class PerceptionNode(Node):
         matrix[:3, 3] = translation
         return matrix
 
+    def publish_target_coord(self, coords):
+        pose_msg = PoseStamped()
+        pose_msg.header.stamp = self.get_clock().now().to_msg()
+        pose_msg.pose.position.x = coords[0]
+        pose_msg.pose.position.y = coords[1]
+        pose_msg.pose.position.z = coords[2]
+    
     def publish_debug_marker(self, coords):
         """ Publish a marker in RViz at the transformed coordinates """
         marker = Marker()
