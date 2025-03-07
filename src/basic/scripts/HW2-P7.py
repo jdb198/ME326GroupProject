@@ -58,7 +58,7 @@ class LocobotBaseMotionTracking(Node):
 
         # Define the integrated error variables
         self.integrated_error = np.matrix([[0],[0]]) #this is the integrated error for Proportional, Integral (PI) control
-        # self.integrated_error_factor = 1.0 #multiply this by accumulated error, this is the Ki (integrated error) gain
+        self.integrated_error_factor = 1.0 #multiply this by accumulated error, this is the Ki (integrated error) gain
         self.integrated_error_list = []
         self.length_of_integrated_error_list = 20
 
@@ -139,7 +139,7 @@ class LocobotBaseMotionTracking(Node):
         for err in self.integrated_error_list:
             self.integrated_error = self.integrated_error + err
 
-        point_p_error_signal = Kp_mat * error_vect # + Ki_mat * self.integrated_error # Find the point error signal
+        point_p_error_signal = Kp_mat * error_vect + Ki_mat * self.integrated_error # Find the point error signal
 
         # Define non-holonomic matrix and find the control input matrix
         non_holonomic_mat = np.matrix([[np.cos(current_angle), -self.L*np.sin(current_angle)], [np.sin(current_angle), self.L * np.cos(current_angle)]])
