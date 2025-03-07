@@ -153,12 +153,15 @@ class LocobotBaseMotionTracking(Node):
             self.err_magnitude = np.linalg.norm(error_vect)
             # net_error_magnitude = np.linalg.norm(point_p_error_signal)
 
+            max_fwd_speed = 0.4  # Set a maximum turn speed (rad/s)
+            min_fwd_speed = 0.1  # Ensure minimum turn speed
+
             max_turn_speed = 1.5  # Set a maximum turn speed (rad/s)
             min_turn_speed = 0.2  # Ensure minimum turn speed
             
             # Publish velocity message
             control_msg = Twist()
-            control_msg.linear.x = float(v)
+            control_msg.linear.x = max(min_fwd_speed, min(max_fwd_speed, abs(float(v)))) * np.sign(float(v))
             control_msg.angular.z = max(min_turn_speed, min(max_turn_speed, abs(float(omega)))) * np.sign(float(omega))
             # control_msg.angular.z = float(omega)
 
