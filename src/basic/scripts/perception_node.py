@@ -21,6 +21,7 @@ from scipy.spatial.transform import Rotation
 from utils.align_depth_fncs import align_depth
 
 from interbotix_xs_modules.xs_robot.locobot import InterbotixLocobotXS
+import time
 
 class PerceptionNode(Node):
     def __init__(self):
@@ -37,18 +38,19 @@ class PerceptionNode(Node):
 
         # Subscribers
         # Locobot 1
-        # self.create_subscription(Image, '/locobot/camera/color/image_raw', self.image_callback, qos_profile)
-        # self.create_subscription(Image, '/locobot/camera/depth/image_rect_raw', self.depth_callback, qos_profile)
-        # self.create_subscription(CameraInfo, '/locobot/camera/color/camera_info', self.camera_info_callback, 10)
-        # self.create_subscription(CameraInfo, '/locobot/camera/depth/camera_info', self.camera_depth_info_callback, 10)
-        # self.create_subscription(Extrinsics, '/locobot/camera/extrinsics/depth_to_color', self.depth2cam_ext_callback, 10)
+        self.create_subscription(Image, '/locobot/camera/color/image_raw', self.image_callback, qos_profile)
+        self.create_subscription(Image, '/locobot/camera/depth/image_rect_raw', self.depth_callback, qos_profile)
+        self.create_subscription(CameraInfo, '/locobot/camera/color/camera_info', self.camera_info_callback, 10)
+        self.create_subscription(CameraInfo, '/locobot/camera/depth/camera_info', self.camera_depth_info_callback, 10)
+        self.create_subscription(Extrinsics, '/locobot/camera/extrinsics/depth_to_color', self.depth2cam_ext_callback, 10)
         
         # Locobot 3
-        self.create_subscription(Image, '/locobot/camera/camera/color/image_raw', self.image_callback, qos_profile)
-        self.create_subscription(Image, '/locobot/camera/camera/depth/image_rect_raw', self.depth_callback, qos_profile)
-        self.create_subscription(CameraInfo, '/locobot/camera/camera/color/camera_info', self.camera_info_callback, 10)
-        self.create_subscription(CameraInfo, '/locobot/camera/camera/depth/camera_info', self.camera_depth_info_callback, 10)
-        self.create_subscription(Extrinsics, '/locobot/camera/camera/extrinsics/depth_to_color', self.depth2cam_ext_callback, 10)
+        # self.create_subscription(Image, '/locobot/camera/camera/color/image_raw', self.image_callback, qos_profile)
+        # self.create_subscription(Image, '/locobot/camera/camera/depth/image_rect_raw', self.depth_callback, qos_profile)
+        # self.create_subscription(CameraInfo, '/locobot/camera/camera/color/camera_info', self.camera_info_callback, 10)
+        # self.create_subscription(CameraInfo, '/locobot/camera/camera/depth/camera_info', self.camera_depth_info_callback, 10)
+        # self.create_subscription(Extrinsics, '/locobot/camera/camera/extrinsics/depth_to_color', self.depth2cam_ext_callback, 10)
+        
         self.create_subscription(Odometry, "/locobot/mobile_base/odom", self.odom_callback, qos_profile)
         # Simulation
         # self.create_subscription(Odometry, "/locobot/odom", self.odom_callback, 10)
@@ -81,10 +83,13 @@ class PerceptionNode(Node):
         
         # Debugging Publishers
         self.debug_image_pub = self.create_publisher(Image, "/perception/debug_image", 10)
+        self.debug_depth_pub = self.create_publisher(Image, "/perception/debug_depth", 10)
         self.marker_pub = self.create_publisher(Marker, "/perception/debug_marker", 10)
 
         self.locobot = InterbotixLocobotXS(robot_model="locobot_wx250s", arm_model="mobile_wx250s")
-        self.locobot.arm.go_to_sleep_pose()
+        # self.locobot.gripper.release()
+        # self.locobot.arm.go_to_sleep_pose()
+        # time.sleep(1.5)
 
         self.get_logger().info("Perception Node Successfully created")
 
@@ -161,7 +166,7 @@ class PerceptionNode(Node):
         print("Depth image reference frame: ", depth_msg.header.frame_id)
         # depth_to_rgb = self.get_transform(self.depth_camera_frame, self.camera_frame, timestamp) # finding tf at exact timestamp is hard
         depth_to_rgb = self.get_transform(self.depth_camera_frame, self.camera_frame)
-        print(depth_to_rgb)
+        # print(depth_to_rgb)
         if not depth_to_rgb:
             print("Failed to find the desired depth_to_rgb tf. Will try later....")
             return
@@ -173,7 +178,7 @@ class PerceptionNode(Node):
         # TODO Get pixel values from VLM
 
         # For Debugging
-        pixel_x, pixel_y = [150, 400]
+        pixel_x, pixel_y = [305, 300]
         debug_image = rgb_image.copy()
         cv2.circle(debug_image, (pixel_x, pixel_y), 5, (0, 0, 255), -1)
         debug_img_msg = self.bridge.cv2_to_imgmsg(debug_image, "bgr8")
@@ -184,6 +189,10 @@ class PerceptionNode(Node):
         # Depth-RGB alignment
         # depth_image = self.get_depth_aligned_with_rgb(depth_image, rgb_image, self.transform_to_matrix(self.latest_depth2cam_extrinsic))
         depth_image = self.get_depth_aligned_with_rgb(depth_image, rgb_image, self.transform_to_matrix(depth_to_rgb))
+        debug_depth = depth_image.copy()
+        debug_depth_msg = self.bridge.cv2_to_imgmsg(debug_depth, "16UC1")
+        debug_depth_msg.header = depth_msg.header
+        self.debug_depth_pub.publish(debug_depth_msg)
         
         depth = depth_image[int(pixel_y), int(pixel_x)]/1000.0
         camera_coords = self.pixel_to_camera(pixel_x, pixel_y, depth, camera_info_msg)
@@ -205,8 +214,9 @@ class PerceptionNode(Node):
             self.publish_target_coord(base_coords)
 
         # input("Waiting for robot arm confirmation")
+        # self.locobot.gripper.release()
         # self.locobot.arm.set_ee_pose_components(x=base_coords[0], y=base_coords[1], z=base_coords[2], roll=0.0, pitch=0.0)
-        
+        # self.locobot.gripper.grasp()
         # Clear the prompt after processing
         self.current_prompt = None
 

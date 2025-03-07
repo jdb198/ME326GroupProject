@@ -58,7 +58,7 @@ class LocobotBaseMotionTracking(Node):
 
         # Define the integrated error variables
         self.integrated_error = np.matrix([[0],[0]]) #this is the integrated error for Proportional, Integral (PI) control
-        # self.integrated_error_factor = 1.0 #multiply this by accumulated error, this is the Ki (integrated error) gain
+        self.integrated_error_factor = 1.0 #multiply this by accumulated error, this is the Ki (integrated error) gain
         self.integrated_error_list = []
         self.length_of_integrated_error_list = 20
 
@@ -139,7 +139,7 @@ class LocobotBaseMotionTracking(Node):
         for err in self.integrated_error_list:
             self.integrated_error = self.integrated_error + err
 
-        point_p_error_signal = Kp_mat * error_vect # + Ki_mat * self.integrated_error # Find the point error signal
+        point_p_error_signal = Kp_mat * error_vect + Ki_mat * self.integrated_error # Find the point error signal
 
         # Define non-holonomic matrix and find the control input matrix
         non_holonomic_mat = np.matrix([[np.cos(current_angle), -self.L*np.sin(current_angle)], [np.sin(current_angle), self.L * np.cos(current_angle)]])
@@ -153,12 +153,15 @@ class LocobotBaseMotionTracking(Node):
             self.err_magnitude = np.linalg.norm(error_vect)
             # net_error_magnitude = np.linalg.norm(point_p_error_signal)
 
+            max_fwd_speed = 0.4  # Set a maximum turn speed (rad/s)
+            min_fwd_speed = 0.1  # Ensure minimum turn speed
+
             max_turn_speed = 1.5  # Set a maximum turn speed (rad/s)
             min_turn_speed = 0.2  # Ensure minimum turn speed
             
             # Publish velocity message
             control_msg = Twist()
-            control_msg.linear.x = float(v)
+            control_msg.linear.x = max(min_fwd_speed, min(max_fwd_speed, abs(float(v)))) * np.sign(float(v))
             control_msg.angular.z = max(min_turn_speed, min(max_turn_speed, abs(float(omega)))) * np.sign(float(omega))
             # control_msg.angular.z = float(omega)
 
