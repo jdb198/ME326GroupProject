@@ -37,16 +37,16 @@ class PerceptionNode(Node):
 
         # Subscribers
         # Locobot 1
-        self.create_subscription(Image, '/locobot/camera/color/image_raw', self.image_callback, qos_profile)
-        self.create_subscription(Image, '/locobot/camera/depth/image_rect_raw', self.depth_callback, qos_profile)
-        self.create_subscription(CameraInfo, '/locobot/camera/color/camera_info', self.camera_info_callback, 10)
-        self.create_subscription(CameraInfo, '/locobot/camera/depth/camera_info', self.camera_depth_info_callback, 10)
-        self.create_subscription(Odometry, "/locobot/mobile_base/odom", self.odom_callback, qos_profile)
-        # Locobot 3
         # self.create_subscription(Image, '/locobot/camera/color/image_raw', self.image_callback, qos_profile)
         # self.create_subscription(Image, '/locobot/camera/depth/image_rect_raw', self.depth_callback, qos_profile)
         # self.create_subscription(CameraInfo, '/locobot/camera/color/camera_info', self.camera_info_callback, 10)
         # self.create_subscription(CameraInfo, '/locobot/camera/depth/camera_info', self.camera_depth_info_callback, 10)
+        # self.create_subscription(Odometry, "/locobot/mobile_base/odom", self.odom_callback, qos_profile)
+        # # Locobot 3
+        self.create_subscription(Image, '/locobot/camera/color/image_raw', self.image_callback, qos_profile)
+        self.create_subscription(Image, '/locobot/camera/depth/image_rect_raw', self.depth_callback, qos_profile)
+        self.create_subscription(CameraInfo, '/locobot/camera/color/camera_info', self.camera_info_callback, 10)
+        self.create_subscription(CameraInfo, '/locobot/camera/depth/camera_info', self.camera_depth_info_callback, 10)
         # Simulation
         # self.create_subscription(Odometry, "/locobot/odom", self.odom_callback, 10)
         
@@ -61,11 +61,11 @@ class PerceptionNode(Node):
         # Frames
         self.base_link_frame = "locobot/base_link"
         # Locobot 1
-        self.camera_frame = "camera_color_frame"
-        self.depth_camera_frame = "camera_depth_frame"
+        # self.camera_frame = "camera_color_frame"
+        # self.depth_camera_frame = "camera_depth_frame"
         # Locobot 3
-        # self.camera_frame = "camera_color_optical_frame"
-        # self.depth_camera_frame = "camera_depth_optical_frame"
+        self.camera_frame = "camera_color_optical_frame"
+        self.depth_camera_frame = "camera_depth_optical_frame"
 
         # State variables
         self.latest_rgb = None
@@ -99,7 +99,8 @@ class PerceptionNode(Node):
         self.latest_depth_camera_info = msg
 
     def depth2cam_ext_callback(self, msg):
-        self.latest_depth2cam_extrinsic = msgdef odom_callback(self, msg):
+        self.latest_depth2cam_extrinsic = msg
+
     def odom_callback(self, msg):
         self.latest_odom = msg
     
@@ -113,9 +114,11 @@ class PerceptionNode(Node):
         # if not self.current_prompt:
         #     return  # Skip processing if no prompt is set
 
-        if not all([self.latest_rgb, self.latest_depth, self.latest_camera_info, self.latest_odom]):
+        # Checking required message subscription
+        # for Locobot 1
+        # if not all([self.latest_rgb, self.latest_depth, self.latest_camera_info, self.latest_odom]):
         # for Locobot 3
-        # if not all([self.latest_rgb, self.latest_depth, self.latest_camera_info]):
+        if not all([self.latest_rgb, self.latest_depth, self.latest_camera_info]):
             self.get_logger().warn("Waiting for required messages to be prepared...")
             if not self.latest_rgb:
                 self.get_logger().warn("Waiting for latest_rgb")
@@ -189,6 +192,9 @@ class PerceptionNode(Node):
             self.get_logger().info(f"Converted Base Coordinates: {base_coords[0]}, {base_coords[1]}, {base_coords[2]}")
             self.publish_debug_marker(base_coords)
 
+        input("Waiting for robot arm confirmation")
+        # self.locobot.arm.set_ee_pose_components(x=base_coords[0], y=base_coords[1], z=base_coords[2], roll=0.0, pitch=0.0)
+        
         # Clear the prompt after processing
         self.current_prompt = None
 

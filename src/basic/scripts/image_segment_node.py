@@ -1,3 +1,6 @@
+import torch
+import numpy as np 
+import matplotlib.pyplot as plt
 import rclpy
 from rclpy.node import Node
 import numpy as np
@@ -6,7 +9,7 @@ from PIL import Image
 import torch
 import cv2
 from ultralytics import YOLO
-from clip_utils import create_model, preprocess_pil_image, tokenize  # Assuming these are defined elsewhere
+from open_clip import create_model, tokenize  # Assuming these are defined elsewhere
 import os
 
 class ImageSegmentNode(Node):
@@ -32,7 +35,7 @@ class ImageSegmentNode(Node):
         self.get_logger().info("Image segment node started. Waiting for transcribed text...")
         
         # Placeholder for the image path - in a real application, this might come from another node
-        self.image_path = "/path/to/default/image.jpg"
+        self.image_path = "../../../saved_images/image_2.png"
         
     def text_callback(self, msg):
         """Process the received transcribed text and use it as a prompt for object detection"""
@@ -51,6 +54,12 @@ class ImageSegmentNode(Node):
             self.get_logger().info(f"Published object center: ({center_x}, {center_y})")
         except Exception as e:
             self.get_logger().error(f"Error processing image: {str(e)}")
+
+    def preprocess_pil_image(self, image):
+        image = image.resize((224, 224))
+        image_array = np.array(image)
+        image_tensor = torch.tensor(image_array).permute(2, 0, 1).unsqueeze(0).float().to(self.device)
+        return image_tensor
 
     def get_center(self, image_path, text_prompt):
         """Find the center of the object in the image that best matches the text prompt"""
@@ -98,7 +107,7 @@ class ImageSegmentNode(Node):
             cropped_object = Image.fromarray(cropped_object)
 
             # Preprocess the cropped object and text
-            image_input = preprocess_pil_image(cropped_object, self.device)
+            image_input = self.preprocess_pil_image(cropped_object)
             text_input = tokenize([text_prompt]).to(self.device)
 
             # Compute similarity using CLIP
