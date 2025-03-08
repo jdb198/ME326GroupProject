@@ -52,9 +52,10 @@ class LocobotBaseMotionTracking(Node):
         # mobile base
         self.L = 0.1
 
-        # Define Kp and Ki variables
+        # Define Kp, Ki, and Kd variables
         self.Kp = 1.0
         self.Ki = 0.2
+        self.Kd = 0.3
 
         # Define the integrated error variables
         self.integrated_error = np.matrix([[0],[0]]) #this is the integrated error for Proportional, Integral (PI) control
@@ -67,6 +68,12 @@ class LocobotBaseMotionTracking(Node):
         self.angle_error_thresh = 0.05
 
         self.err_magnitude = 0  # Initialize error magnitude
+
+        # Define previous time
+        self.prev_time = self.get_clock().now()
+
+        # Define derivative error
+        self.derivative_error = np.matrix([[0], [0]])
 
         # Define the boolean values on if the position or angle has been reached
         self.position_reached = False
@@ -100,7 +107,9 @@ class LocobotBaseMotionTracking(Node):
         R21 = 2*qx*qz - 2*qw*qz
         R22 = qw**2 - qx**2 + qy**2 - qz**2
 
-        # t = (self.get_clock().now() - self.t_init).nanoseconds * 1e-9  # Get elapsed time since the initial time
+        curr_time = self.get_clock().now()
+        dt = (curr_time - self.prev_time).nanoseconds * 1e-9  # Get elapsed time since the initial time
+        dt = max(dt, 1e-6)
 
         # # Edit the Kp value if one full rotation has passed
         # if t > 20:
@@ -126,6 +135,7 @@ class LocobotBaseMotionTracking(Node):
 
         Kp_mat = self.Kp * np.eye(2)  # Make the Kp identity matrix
         Ki_mat = self.Ki * np.eye(2)  # Make the Ki identity matrix
+        Kd_mat = self.Kd * np.eye(2)
 
         Rotation_mat = np.matrix([[R11,R12],[R21,R22]])  # Define rotation matrix
 
@@ -139,7 +149,11 @@ class LocobotBaseMotionTracking(Node):
         for err in self.integrated_error_list:
             self.integrated_error = self.integrated_error + err
 
-        point_p_error_signal = Kp_mat * error_vect + Ki_mat * self.integrated_error # Find the point error signal
+        der_error = (error_vect - self.derivative_error) / dt
+        self.derivative_error = error_vect
+        self.prev_time = curr_time
+
+        point_p_error_signal = (Kp_mat * error_vect) + (Ki_mat * self.integrated_error) + (Kd_mat * der_error) # Find the point error signal
 
         # Define non-holonomic matrix and find the control input matrix
         non_holonomic_mat = np.matrix([[np.cos(current_angle), -self.L*np.sin(current_angle)], [np.sin(current_angle), self.L * np.cos(current_angle)]])
