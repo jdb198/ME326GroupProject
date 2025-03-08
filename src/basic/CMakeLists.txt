@@ -7,6 +7,7 @@ endif()
 
 # find dependencies
 find_package(ament_cmake REQUIRED)
+find_package(rosidl_default_generators REQUIRED)
 # uncomment the following section in order to fill in
 # further dependencies manually.
 # find_package(<dependency> REQUIRED)
@@ -23,8 +24,16 @@ if(BUILD_TESTING)
 endif()
 
 install(PROGRAMS
-    scripts/input_node.py
+    scripts/perception_node.py
+    scripts/audio_recorder_node.py
+    scripts/audio_transcriber_node.py
+    scripts/Grasp.py
+    scripts/HW2-P7.py
     DESTINATION lib/${PROJECT_NAME}
 )
+
+rosidl_generate_interfaces(${PROJECT_NAME}
+  msg/TargetObject.msg
+ )
 
 ament_package()
