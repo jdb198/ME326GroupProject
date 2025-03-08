@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import math
 from interbotix_xs_modules.xs_robot.locobot import InterbotixLocobotXS
 import numpy as np

@@ -23,12 +23,18 @@ if(BUILD_TESTING)
   ament_lint_auto_find_test_dependencies()
 endif()
 
+
+install(DIRECTORY scripts/utils/
+  DESTINATION lib/${PROJECT_NAME}/utils
+)
+
 install(PROGRAMS
     scripts/perception_node.py
     scripts/audio_recorder_node.py
     scripts/audio_transcriber_node.py
     scripts/Grasp.py
     scripts/HW2-P7.py
+    scripts/utils/align_depth_fncs.py
     DESTINATION lib/${PROJECT_NAME}
 )
 
