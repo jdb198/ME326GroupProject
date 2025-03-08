@@ -1,9 +1,0 @@
-/home/ubuntu/Desktop/Works/ME326GroupProject/build/basic/CMakeFiles/install/strip.dir
-/home/ubuntu/Desktop/Works/ME326GroupProject/build/basic/CMakeFiles/install/local.dir
-/home/ubuntu/Desktop/Works/ME326GroupProject/build/basic/CMakeFiles/install.dir
-/home/ubuntu/Desktop/Works/ME326GroupProject/build/basic/CMakeFiles/list_install_components.dir
-/home/ubuntu/Desktop/Works/ME326GroupProject/build/basic/CMakeFiles/rebuild_cache.dir
-/home/ubuntu/Desktop/Works/ME326GroupProject/build/basic/CMakeFiles/edit_cache.dir
-/home/ubuntu/Desktop/Works/ME326GroupProject/build/basic/CMakeFiles/test.dir
-/home/ubuntu/Desktop/Works/ME326GroupProject/build/basic/CMakeFiles/basic_uninstall.dir
-/home/ubuntu/Desktop/Works/ME326GroupProject/build/basic/CMakeFiles/uninstall.dir
