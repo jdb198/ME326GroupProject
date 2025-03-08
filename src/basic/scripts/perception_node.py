@@ -32,7 +32,7 @@ class PerceptionNode(Node):
     def __init__(self):
         super().__init__('perception_node')
 
-        self.locobot_type = 0 # 0(sim), 1, 3
+        self.locobot_type = 3 # 0(sim), 1, 3
         self.debug = True
 
         rgb_info_topics = {0: '/locobot/camera/camera_info', 1: '/locobot/camera/color/camera_info', 3: '/locobot/camera/camera/color/camera_info'}
@@ -84,10 +84,10 @@ class PerceptionNode(Node):
 
         self.get_logger().info("Waiting for Depth to RGB TF...")
         self.depth_to_rgb_tf = None
-        while not self.depth_to_rgb_tf:
-            self.depth_to_rgb_tf = self.get_transform(self.depth_camera_frame, self.camera_frame)
-        self.get_logger().info("Success!")
-        print(self.depth_to_rgb_tf)
+        # while not self.depth_to_rgb_tf:
+        #     self.depth_to_rgb_tf = self.get_transform(self.depth_camera_frame, self.camera_frame)
+        # self.get_logger().info("Success!")
+        # print(self.depth_to_rgb_tf)
         # self.get_logger().info("Waiting for Depth to RGB Extrinsic...")
         # self.depth2cam_extrinsic = wait_for_message('/locobot/camera/extrinsics/depth_to_color', Extrinsics, self)
         # self.get_logger().info("Success!")
@@ -104,9 +104,9 @@ class PerceptionNode(Node):
         # Locobot instance for debugging purpose
         if self.debug and self.locobot_type > 0:
             self.locobot = InterbotixLocobotXS(robot_model="locobot_wx250s", arm_model="mobile_wx250s")
-            # self.locobot.gripper.release()
-            # self.locobot.arm.go_to_sleep_pose()
-            # time.sleep(1.5)
+            self.locobot.gripper.release()
+            self.locobot.arm.go_to_sleep_pose()
+            time.sleep(1.0)
 
         self.get_logger().info("Perception Node Successfully created")
 
@@ -170,18 +170,19 @@ class PerceptionNode(Node):
         # print("Depth image reference frame: ", depth_msg.header.frame_id)
         # depth_to_rgb = self.get_transform(self.depth_camera_frame, self.camera_frame, timestamp) # finding tf at exact timestamp is hard
         # depth_to_rgb = self.get_transform(self.depth_camera_frame, self.camera_frame)
+        self.depth_to_rgb_tf = self.get_transform(self.depth_camera_frame, self.camera_frame)
         # if self.locobot_type > 0 and not depth_to_rgb:
         #     print("Failed to find the desired depth_to_rgb tf. Will try later....")
         #     return
 
-        pixel_x, pixel_y = [305, 300] # TODO Get pixel values from VLM
+        pixel_x, pixel_y = [300, 400] # TODO Get pixel values from VLM
         
         # Convert images
         rgb_image = self.bridge.imgmsg_to_cv2(rgb_msg, "bgr8")
         depth_image = self.bridge.imgmsg_to_cv2(depth_msg, "16UC1")
         # Depth-RGB alignment
         if self.locobot_type > 0:
-            depth_image = self.get_depth_aligned_with_rgb(depth_image, rgb_image, self.transform_to_matrix(self.depth_to_rgb_tf))
+            depth_image = self.get_depth_aligned_with_rgb(depth_image, rgb_image, np.linalg.inv(self.transform_to_matrix(self.depth_to_rgb_tf)))
             # depth_image = self.get_depth_aligned_with_rgb(depth_image, rgb_image, self.transform_to_matrix(self.depth2cam_extrinsic))
         
         if self.debug:
