@@ -7,24 +7,34 @@ import time
 # ALSO PUT IN THE CALL FOR THE FINGER DISTANCE 
 
 def main():
-    
+    grasp = 0
     locobot = InterbotixLocobotXS(robot_model="locobot_wx250s", arm_model="mobile_wx250s")
 
-    locobot.arm.go_to_home_pose()
-    locobot.gripper.release()
-    grasp_complete = False
-    while grasp_complete == False:
-        #####get_coordinates = # subscribe and get coordinates from image
-        locobot.arm.set_ee_pose_components(x=x, y=y, z=z, roll=1.0, pitch=1.5)
+    
 
+    while grasp == 0: 
+        locobot.arm.go_to_home_pose()
+        time.sleep(3)
+        locobot.gripper.release()
+        locobot.arm.set_ee_pose_components(x=.5, y=.02, z= -.03, roll=1.0, pitch=1.5)
+        time.sleep(3)
         locobot.gripper.grasp()
         locobot.arm.go_to_home_pose()
-        #locobot.arm.go_to_sleep_pose()
-        #finger_distance # check for grasp.
-        if finger_grasp > np.abs(.002):
-            grasp_complete = True
+        time.sleep(5)
+        finger_position = locobot.gripper.get_finger_position()
+        print(finger_position)
+
+        if finger_position > .02: # this is telling us if it is grasping or not. 
+            print('Success')
+            grasp = 1
+            break
         else:
-            time.sleep(3)
+            print('Failure')
+            grasp = 0
+
+    locobot.gripper.release()
+    locobot.arm.go_to_sleep_pose()
+
 
 
 if __name__=='__main__':
