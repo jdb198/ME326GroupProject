@@ -23,6 +23,7 @@ class LocobotBaseMotionTracking(Node):
         self.odom_subscription = self.create_subscription(Odometry, '/locobot/mobile_base/odom', self.odom_callback, qos_profile)
         self.next_step_publisher = self.create_publisher(Bool, '/start_manipulation', 10)
         self.nav_pose_subscriber = self.create_subscription(PoseStamped, '/camera_pose_receive', self.posestamp_callback, 10)
+        self.target_coord_subscriber = self.create_subscription(TargetObject, '/perception/target_coord', self.target_callback, 10)
 
         self.t_init = self.get_clock().now()  # Define the initial time
 
@@ -88,6 +89,23 @@ class LocobotBaseMotionTracking(Node):
 
         self.position_reached = False
         self.angle_reached = False
+    
+    def target_callback(self, msg: TargetObject):
+    """ Update target coordinates from perception node """
+        self.get_logger().info(f"Received target: ({msg.x}, {msg.y}, {msg.z}), Purpose: {msg.purpose}")
+
+        if msg.purpose == 1:
+            self.get_logger().info("Target reached, stopping.")
+            self.velocity_publisher.publish(Twist())  # Stop the robot
+            reach_goal_msg = Bool()
+            reach_goal_msg.data = True
+            self.next_step_publisher.publish(reach_goal_msg)  # Signal next step
+            return
+
+        self.target_pose = msg  # Store the new target
+        self.position_reached = False  # Reset state
+        self.move_towards_target()  # Move towards the new target
+
 
     # Odometry callback function
     def odom_callback(self, odom_msg: Odometry):
@@ -291,6 +309,36 @@ class LocobotBaseMotionTracking(Node):
         self.target_pose_visual.publish(marker)"
 
     """
+
+    def move_towards_target(self):
+        """ Move incrementally towards the target instead of all at once """
+        if not self.target_pose:
+            self.get_logger().warn("No target pose received yet.")
+            return
+
+        # Calculate error vector
+        err_x = self.target_pose.x - self.x_odom
+        err_y = self.target_pose.y - self.y_odom
+        distance = np.sqrt(err_x**2 + err_y**2)
+
+        if distance < self.position_error_thresh:
+            self.get_logger().info("Close enough to target. Stopping and setting purpose to 1.")
+            self.target_pose.purpose = 1  # Indicate goal is reached
+            self.target_callback(self.target_pose)  # Trigger stop logic
+            return
+
+        # Move in small increments
+        move_step = min(0.1, distance)  # Move at most 0.1m per step
+        angle = np.arctan2(err_y, err_x)
+
+        cmd = Twist()
+        cmd.linear.x = move_step * np.cos(angle)
+        cmd.linear.y = move_step * np.sin(angle)
+        cmd.angular.z = 0.0  # No rotation
+
+        self.velocity_publisher.publish(cmd)
+        self.get_logger().info(f"Moving towards target: ({self.target_pose.x}, {self.target_pose.y}), step={move_step:.2f}")
+
 
 # Main function to control the node
 def main(args=None):
