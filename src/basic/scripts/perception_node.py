@@ -93,7 +93,9 @@ class PerceptionNode(Node):
         # self.get_logger().info("Success!")
 
         # Publisher
-        self.target_coord_pub = self.create_publisher(PoseStamped, "/perception/target_coord", 10)
+        #self.target_coord_pub = self.create_publisher(PoseStamped, "/perception/target_coord", 10)
+        self.target_coord_pub = self.create_publisher(TargetObject, "/perception/target_coord", 10)
+
         
         # Debugging Publishers
         self.debug_image_pub = self.create_publisher(Image, "/perception/debug_image", 10)
@@ -326,12 +328,37 @@ class PerceptionNode(Node):
         matrix[:3, 3] = translation
         return matrix
 
+    # def publish_target_coord(self, coords):
+    #     pose_msg = PoseStamped()
+    #     pose_msg.header.stamp = self.get_clock().now().to_msg()
+    #     pose_msg.pose.position.x = coords[0]
+    #     pose_msg.pose.position.y = coords[1]
+    #     pose_msg.pose.position.z = coords[2]
+
     def publish_target_coord(self, coords):
-        pose_msg = PoseStamped()
-        pose_msg.header.stamp = self.get_clock().now().to_msg()
-        pose_msg.pose.position.x = coords[0]
-        pose_msg.pose.position.y = coords[1]
-        pose_msg.pose.position.z = coords[2]
+        """ Publish updated target coordinates and check if the robot is close enough """
+        target_msg = TargetObject()
+        target_msg.x = coords[0]
+        target_msg.y = coords[1]
+        target_msg.z = coords[2]
+
+        if self.latest_odom:
+            # Extract robot position from latest odometry
+            robot_x = self.latest_odom.pose.pose.position.x
+            robot_y = self.latest_odom.pose.pose.position.y
+            robot_z = self.latest_odom.pose.pose.position.z
+
+            # Calculate distance to target
+            distance = np.sqrt((robot_x - coords[0])**2 + (robot_y - coords[1])**2 + (robot_z - coords[2])**2)
+
+            # Set purpose = 1 if within threshold distance
+            target_msg.purpose = 1 if distance < 0.1 else 0  # Adjust threshold as needed
+        else:
+            target_msg.purpose = 0  # Default to 0 if no odometry data available
+
+        self.target_coord_pub.publish(target_msg)
+        self.get_logger().info(f"Published target: ({coords[0]}, {coords[1]}, {coords[2]}), Purpose: {target_msg.purpose}")
+
     
     def publish_debug_marker(self, coords):
         """ Publish a marker in RViz at the transformed coordinates (always expect base_link_frame) """
