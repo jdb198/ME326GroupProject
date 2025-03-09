@@ -82,7 +82,7 @@ class PerceptionNode(Node):
         self.get_logger().info("Success!")
         print(self.depth_camera_info)
 
-        self.get_logger().info("Waiting for Depth to RGB TF...")
+        # self.get_logger().info("Waiting for Depth to RGB TF...")
         self.depth_to_rgb_tf = None
         # while not self.depth_to_rgb_tf:
         #     self.depth_to_rgb_tf = self.get_transform(self.depth_camera_frame, self.camera_frame)
@@ -104,6 +104,7 @@ class PerceptionNode(Node):
         # Locobot instance for debugging purpose
         if self.debug and self.locobot_type > 0:
             self.locobot = InterbotixLocobotXS(robot_model="locobot_wx250s", arm_model="mobile_wx250s")
+            # Comment this if you do not need to tune the offset values anymore
             self.locobot.gripper.release()
             self.locobot.arm.go_to_sleep_pose()
             time.sleep(1.0)
@@ -182,8 +183,8 @@ class PerceptionNode(Node):
         depth_image = self.bridge.imgmsg_to_cv2(depth_msg, "16UC1")
         # Depth-RGB alignment
         if self.locobot_type > 0:
-            depth_image = self.get_depth_aligned_with_rgb(depth_image, rgb_image, np.linalg.inv(self.transform_to_matrix(self.depth_to_rgb_tf)))
-            # depth_image = self.get_depth_aligned_with_rgb(depth_image, rgb_image, self.transform_to_matrix(self.depth2cam_extrinsic))
+            # depth_image = self.get_depth_aligned_with_rgb(depth_image, rgb_image, np.linalg.inv(self.transform_to_matrix(self.depth_to_rgb_tf)))
+            depth_image = self.get_depth_aligned_with_rgb(depth_image, rgb_image, self.transform_to_matrix(self.depth_to_rgb_tf))
         
         if self.debug:
             debug_image = rgb_image.copy()
@@ -213,7 +214,23 @@ class PerceptionNode(Node):
         else:
             arm_base_coords = self.camera_to_arm_base(camera_coords, camera_to_arm_base)
             self.get_logger().info(f"Converted Arm Base Coordinates: {arm_base_coords[0]}, {arm_base_coords[1]}, {arm_base_coords[2]}")
+            
+            # Temporary fix to avoid using critically inaccurate depth values
+            if arm_base_coords[2] < -0.2 or arm_base_coords[0] < 0.2:
+                print("Transformed the coordinate, but unexpected value. Will try again....")
+                return
+            
             self.publish_target_coord(arm_base_coords)
+            # Comment this if you do not need to tune the offset values anymore
+            if self.debug:
+                # Change these offset values! (can be different depending on the locobot)
+                x_offset = 0.0
+                y_offset = 0.0
+                z_offset = 0.0
+                input("Waiting for robot arm movement confirmation")
+                self.locobot.gripper.release()
+                self.locobot.arm.set_ee_pose_components(x=base_coords[0] + x_offset, y=base_coords[1]+y_offset, z=base_coords[2]+z_offset, roll=0.0, pitch=1.0)
+                self.locobot.gripper.grasp()
 
         # For debug purpose
         if self.debug:
@@ -224,15 +241,8 @@ class PerceptionNode(Node):
             self.publish_debug_marker(base_coords[:3])
             # self.publish_pointcloud(rgb_image, depth_image)
 
-        # input("Waiting for robot arm confirmation")
-        # self.locobot.gripper.release()
-        # self.locobot.arm.set_ee_pose_components(x=base_coords[0], y=base_coords[1], z=base_coords[2], roll=0.0, pitch=0.0)
-        # self.locobot.gripper.grasp()
-        # Clear the prompt after processing
-
         # Empty the current prompt to avoid running image processing again
-        # input("Processed Finished.... Continue?")
-        self.current_prompt = None
+        self.target_pixel = None
 
     def get_transform(self, ref_frame, target_frame, timestamp = rclpy.time.Time(), timeout_margin = 1.0):
         try:
