@@ -128,13 +128,13 @@ class LocobotBaseMotionTracking(Node):
 
             updated_target_pose = copy.deepcopy(self.prev_pose)
 
-            if abs(x_dist) > 0.1:
+            if abs(x_dist) > 0.05:
                 if x_dist > 0:
                     updated_target_pose.pose.position.x += 0.1
                 else:
                     updated_target_pose.pose.position.x -= 0.1
 
-            if abs(y_dist) > 0.1:
+            if abs(y_dist) > 0.05:
                 if y_dist > 0:
                     updated_target_pose.pose.position.y += 0.1
                 else:
