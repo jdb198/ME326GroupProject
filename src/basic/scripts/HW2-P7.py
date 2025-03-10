@@ -121,16 +121,29 @@ class LocobotBaseMotionTracking(Node):
             self.angle_reached = False
 
             # Modify target_pose x value
-            self.target_pose.pose.position.x = self.target_pose.pose.position.x - 0.
+            self.target_pose.pose.position.x = self.target_pose.pose.position.x - 0.25
 
             x_dist = self.target_pose.pose.position.x - self.prev_pose.pose.position.x
             y_dist = self.target_pose.pose.position.y - self.prev_pose.pose.position.y
 
-            if x_dist > 0.1 and y_dist == 0:
-                self.get_logger().info("Target is the same as previous pose, not moving.")
-                return
+            updated_target_pose = copy.deepcopy(self.prev_pose)
+
+            if abs(x_dist) > 0.1:
+                if x_dist > 0:
+                    updated_target_pose.pose.position.x += 0.1
+                else:
+                    updated_target_pose.pose.position.x -= 0.1
+
+            if abs(y_dist) > 0.1:
+                if y_dist > 0:
+                    updated_target_pose.pose.position.y += 0.1
+                else:
+                    updated_target_pose.pose.position.y -= 0.1
+
+            self.target_pose = updated_target_pose
 
             return
+        
         elif target_msg.purpose == 1:
             self.get_logger().info("Target reached, stopping.")
 
@@ -141,6 +154,7 @@ class LocobotBaseMotionTracking(Node):
             reach_goal_msg = Bool()
             reach_goal_msg.data = True
             self.next_step_publisher.publish(reach_goal_msg)  # Signal next step
+
             return
 
 
