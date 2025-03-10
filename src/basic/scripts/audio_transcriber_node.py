@@ -97,8 +97,8 @@ class AudioTranscriberNode(Node):
         )
 
         response = client.recognize(config=config, audio=audio)
-        #return " ".join([result.alternatives[0].transcript for result in response.results])
-        return "Find the banana."
+        return " ".join([result.alternatives[0].transcript for result in response.results])
+        #return "Find the banana."
 
 
 def main(args=None):

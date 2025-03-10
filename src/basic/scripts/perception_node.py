@@ -39,7 +39,7 @@ from rclpy.wait_for_message import wait_for_message
 from sensor_msgs.msg import Image, CameraInfo
 import numpy as np
 from std_msgs.msg import ByteMultiArray, UInt8MultiArray, String, Float32MultiArray
-from PIL import Image
+from PIL import Image as pil_image
 import tf2_ros
 import torch
 import cv2
@@ -51,7 +51,7 @@ class PerceptionNode(Node):
     def __init__(self):
         super().__init__('perception_node')
 
-        self.locobot_type = 3 # 0(sim), 1, 3
+        self.locobot_type = 1 # 0(sim), 1, 3
         self.debug = True
 
         rgb_info_topics = {0: '/locobot/camera/camera_info', 1: '/locobot/camera/color/camera_info', 3: '/locobot/camera/camera/color/camera_info'}
@@ -70,6 +70,7 @@ class PerceptionNode(Node):
         qos_profile.reliability = ReliabilityPolicy.BEST_EFFORT
 
         # Subscribers
+        print(rgb_img_topics[self.locobot_type])
         self.create_subscription(Image, rgb_img_topics[self.locobot_type], self.image_callback, qos_profile)
         self.create_subscription(Image, depth_img_topics[self.locobot_type], self.depth_callback, qos_profile)
         self.create_subscription(Odometry, odom_topics[self.locobot_type], self.odom_callback, qos_profile)
@@ -95,7 +96,7 @@ class PerceptionNode(Node):
         self.latest_odom = None
         self.target_pixel = None
         self.need_world_coordinate = False # Always False for Locobot 3
-        self.image_path = ""
+        self.image_path = None
         
         self.get_logger().info("Waiting for RGB Camera Info....")
         self.rgb_camera_info = wait_for_message(CameraInfo, self, rgb_info_topics[self.locobot_type])[1]
@@ -151,7 +152,7 @@ class PerceptionNode(Node):
     def object_callback(self, msg):
         """ Store the image_segment_node-given object information and trigger processing """
         self.get_logger().info(f"Received new target object information")
-        self.target_pixel = [msg.x, msg.y]
+        #self.target_pixel = [msg.x, msg.y]
         self.need_world_coordinate = True if msg.purpose == 0 else False
 
     def text_callback(self, msg):
@@ -166,6 +167,8 @@ class PerceptionNode(Node):
             
             # Get object center coordinates based on text prompt
             center_x, center_y = self.get_center(self.image_path, text_prompt)
+            print(center_x)
+            print(center_y)
             
             # Store target pixel for later processing in process_image()
             self.target_pixel = (int(center_x), int(center_y))
@@ -176,19 +179,22 @@ class PerceptionNode(Node):
 
     def save_camera_frame(self, msg):
         try:
+            # If an image has already been saved, skip saving again
+            if self.image_path:
+                return
+            
             # Convert ROS Image message to OpenCV format
             cv_image = self.bridge.imgmsg_to_cv2(msg, "bgr8")
-            
+
             # Save the image to disk
-            image_path = "/tmp/perception_frame.jpg"  # Change this path if needed
-            cv2.imwrite(image_path, cv_image)
-            
-            # Update the image path variable
-            self.image_path = image_path
-            
-            self.get_logger().info(f"Saved camera frame to {image_path}")
+            self.image_path = "/tmp/perception_frame.jpg"  # Change this path if needed
+            cv2.imwrite(self.image_path, cv_image)
+
+            self.get_logger().info(f"Saved camera frame to {self.image_path}")
+        
         except Exception as e:
             self.get_logger().error(f"Failed to save camera frame: {str(e)}")
+
 
     def preprocess_pil_image(self, image):
         image = image.resize((224, 224))
@@ -199,7 +205,7 @@ class PerceptionNode(Node):
     def get_center(self, image_path, text_prompt):
         """Find the center of the object in the image that best matches the text prompt"""
         # Load the image
-        image = Image.open(image_path).convert("RGB")
+        image = pil_image.open(image_path).convert("RGB")
 
         # Load YOLOv11 model (pre-trained on COCO dataset)
         model = YOLO("yolo11n.pt")  # YOLOv11 model
@@ -239,7 +245,7 @@ class PerceptionNode(Node):
             # cropped_object = image.crop((xmin, ymin, xmax, ymax))
             cropped_object = image[ymin:ymax, xmin:xmax]
             # convert back to pil
-            cropped_object = Image.fromarray(cropped_object)
+            cropped_object = pil_image.fromarray(cropped_object)
 
             # Preprocess the cropped object and text
             image_input = self.preprocess_pil_image(cropped_object)
@@ -276,8 +282,8 @@ class PerceptionNode(Node):
 
     def process_if_ready(self):
         """ Check if all data is synchronized and process if a target pixel is given """
-        # if not self.target_pixel:
-        #     return  # Skip processing if there is no target pixel to transform
+        if not self.target_pixel:
+            return  # Skip processing if there is no target pixel to transform
         if not all([self.latest_rgb, self.latest_depth, self.rgb_camera_info, not self.need_world_coordinate or self.latest_odom]):
             self.get_logger().warn("Waiting for required messages to be prepared...")
             if not self.latest_rgb:
@@ -392,7 +398,8 @@ class PerceptionNode(Node):
             # self.publish_pointcloud(rgb_image, depth_image)
 
         # Empty the current prompt to avoid running image processing again
-        self.target_pixel = None
+        #self.target_pixel = None
+        #self.image_path = None
 
     def get_transform(self, ref_frame, target_frame, timestamp = rclpy.time.Time(), timeout_margin = 1.0):
         try:
