@@ -17,7 +17,7 @@ def main():
         locobot.arm.go_to_home_pose()
         time.sleep(3)
         locobot.gripper.release()
-        locobot.arm.set_ee_pose_components(x=.5, y=.02, z= -.03, roll=1.0, pitch=1.5)
+        locobot.arm.set_ee_pose_components(x=.3, y=.02, z= -.09, roll=0.0, pitch=1.5)
         time.sleep(3)
         locobot.gripper.grasp()
         locobot.arm.go_to_home_pose()
