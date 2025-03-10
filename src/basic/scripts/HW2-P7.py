@@ -9,6 +9,8 @@ from std_msgs.msg import Bool
 import numpy as np
 from rclpy.qos import QoSProfile, ReliabilityPolicy
 from visualization_msgs.msg import Marker
+from basic.msg import TargetObject
+import copy
 
 class LocobotBaseMotionTracking(Node):
     def __init__(self, target_pose=None):
@@ -22,7 +24,7 @@ class LocobotBaseMotionTracking(Node):
         self.velocity_publisher = self.create_publisher(Twist, '/locobot/mobile_base/cmd_vel', 10)
         self.odom_subscription = self.create_subscription(Odometry, '/locobot/mobile_base/odom', self.odom_callback, qos_profile)
         self.next_step_publisher = self.create_publisher(Bool, '/start_manipulation', 10)
-        self.nav_pose_subscriber = self.create_subscription(PoseStamped, '/camera_pose_receive', self.posestamp_callback, 10)
+        # self.nav_pose_subscriber = self.create_subscription(PoseStamped, '/camera_pose_receive', self.posestamp_callback, 10)
         self.target_coord_subscriber = self.create_subscription(TargetObject, '/perception/target_coord', self.target_callback, 10)
 
         self.t_init = self.get_clock().now()  # Define the initial time
@@ -47,6 +49,16 @@ class LocobotBaseMotionTracking(Node):
             self.get_logger().info("Incorrect type for target pose, expects geometry_msgs PoseStamped type") # Send error msg if wrong type is send to go_to_pose
         else:
             self.target_pose = target_pose
+
+        # Previous pose
+        self.prev_pose = PoseStamped()
+        self.prev_pose.pose.position.x = 0.0
+        self.prev_pose.pose.position.y = 0.0
+
+        self.prev_pose.pose.orientation.x = 0.0
+        self.prev_pose.pose.orientation.y = 0.0
+        self.prev_pose.pose.orientation.z = 0.0
+        self.prev_pose.pose.orientation.w = 1.0
 
         # This is the distance of the point P (x,y) that will be controlled for position. The locobot base_link frame points 
         # forward in the positive x direction, the point P will be on the positive x-axis in the body-fixed frame of the robot 
@@ -82,29 +94,54 @@ class LocobotBaseMotionTracking(Node):
 
         self.get_logger().info('The velocity_publisher node has started.')  # Relay node start message to user
 
-    # Posestamp callback function
-    def posestamp_callback(self, pose_msg: PoseStamped):
-        self.get_logger().info('Pose Received')  # Relay node start message to user
-        self.target_pose = pose_msg
+    # PoseStamped callback function
+    # def posestamp_callback(self, pose_msg: PoseStamped):
+    #     self.get_logger().info('Pose Received')  # Relay node start message to user
+    #     self.target_pose = pose_msg
 
-        self.position_reached = False
-        self.angle_reached = False
+    #     self.position_reached = False
+    #     self.angle_reached = False
     
-    def target_callback(self, msg: TargetObject):
-    """ Update target coordinates from perception node """
-        self.get_logger().info(f"Received target: ({msg.x}, {msg.y}, {msg.z}), Purpose: {msg.purpose}")
+    # TargetObject callback function
+    def target_callback(self, target_msg: TargetObject):
+        # Update target coordinates from perception node
+        self.get_logger().info(
+            f"Received target:\n"
+            f"- x: {target_msg.x}, y: {target_msg.y}, axis: {target_msg.axis}, purpose: {target_msg.purpose}\n"
+            f"- pose.position: ({target_msg.pose.pose.position.x}, {target_msg.pose.pose.position.y}, {target_msg.pose.pose.position.z})"
+        )
 
-        if msg.purpose == 1:
+        self.prev_pose = self.target_pose
+        self.target_pose = target_msg.pose
+
+        if target_msg.purpose == 0:
+            self.get_logger().info("Moving towards target.")
+
+            self.position_reached = False
+            self.angle_reached = False
+
+            # Modify target_pose x value
+            self.target_pose.pose.position.x = self.target_pose.pose.position.x - 0.
+
+            x_dist = self.target_pose.pose.position.x - self.prev_pose.pose.position.x
+            y_dist = self.target_pose.pose.position.y - self.prev_pose.pose.position.y
+
+            if x_dist > 0.1 and y_dist == 0:
+                self.get_logger().info("Target is the same as previous pose, not moving.")
+                return
+
+            return
+        elif target_msg.purpose == 1:
             self.get_logger().info("Target reached, stopping.")
+
+            self.position_reached = True
+            self.angle_reached = True
+
             self.velocity_publisher.publish(Twist())  # Stop the robot
             reach_goal_msg = Bool()
             reach_goal_msg.data = True
             self.next_step_publisher.publish(reach_goal_msg)  # Signal next step
             return
-
-        self.target_pose = msg  # Store the new target
-        self.position_reached = False  # Reset state
-        self.move_towards_target()  # Move towards the new target
 
 
     # Odometry callback function
@@ -308,10 +345,8 @@ class LocobotBaseMotionTracking(Node):
         # Publish the marker
         self.target_pose_visual.publish(marker)"
 
-    """
-
     def move_towards_target(self):
-        """ Move incrementally towards the target instead of all at once """
+        # Move incrementally towards the target instead of all at once
         if not self.target_pose:
             self.get_logger().warn("No target pose received yet.")
             return
@@ -339,6 +374,7 @@ class LocobotBaseMotionTracking(Node):
         self.velocity_publisher.publish(cmd)
         self.get_logger().info(f"Moving towards target: ({self.target_pose.x}, {self.target_pose.y}), step={move_step:.2f}")
 
+    """
 
 # Main function to control the node
 def main(args=None):
