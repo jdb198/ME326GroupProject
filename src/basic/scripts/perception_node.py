@@ -12,6 +12,7 @@ from nav_msgs.msg import Odometry
 from std_msgs.msg import String
 from realsense2_camera_msgs.msg import Extrinsics
 from geometry_msgs.msg import TransformStamped, PoseStamped
+from std_msgs.msg import ByteMultiArray, UInt8MultiArray, String, Float32MultiArray
 from visualization_msgs.msg import Marker #Only for debugging
 from basic.msg import TargetObject
 
@@ -27,6 +28,24 @@ from utils.align_depth_fncs import align_depth
 from interbotix_xs_modules.xs_robot.locobot import InterbotixLocobotXS
 import time
 import struct
+
+import torch
+import numpy as np 
+import matplotlib.pyplot as plt
+import rclpy
+from rclpy.node import Node
+from rclpy.qos import QoSProfile, ReliabilityPolicy
+from rclpy.wait_for_message import wait_for_message
+from sensor_msgs.msg import Image, CameraInfo
+import numpy as np
+from std_msgs.msg import ByteMultiArray, UInt8MultiArray, String, Float32MultiArray
+from PIL import Image
+import tf2_ros
+import torch
+import cv2
+from ultralytics import YOLO
+from open_clip import create_model, tokenize  # Assuming these are defined elsewhere
+import os
 
 class PerceptionNode(Node):
     def __init__(self):
@@ -55,6 +74,11 @@ class PerceptionNode(Node):
         self.create_subscription(Image, depth_img_topics[self.locobot_type], self.depth_callback, qos_profile)
         self.create_subscription(Odometry, odom_topics[self.locobot_type], self.odom_callback, qos_profile)
         self.create_subscription(TargetObject, "object", self.object_callback, 10)
+        
+        # Subscribe to transcribed text
+        self.text_subscription = self.create_subscription(String, 'transcribed_text', self.text_callback, 10)
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.get_logger().info("Image segment node started. Waiting for transcribed text...")
 
         self.timer = self.create_timer(0.1, self.process_if_ready)
         self.bridge = CvBridge()
@@ -71,6 +95,7 @@ class PerceptionNode(Node):
         self.latest_odom = None
         self.target_pixel = None
         self.need_world_coordinate = False # Always False for Locobot 3
+        self.image_path = ""
         
         self.get_logger().info("Waiting for RGB Camera Info....")
         self.rgb_camera_info = wait_for_message(CameraInfo, self, rgb_info_topics[self.locobot_type])[1]
@@ -96,7 +121,6 @@ class PerceptionNode(Node):
         #self.target_coord_pub = self.create_publisher(PoseStamped, "/perception/target_coord", 10)
         self.target_coord_pub = self.create_publisher(TargetObject, "/perception/target_coord", 10)
 
-        
         # Debugging Publishers
         self.debug_image_pub = self.create_publisher(Image, "/perception/debug_image", 10)
         self.debug_depth_pub = self.create_publisher(Image, "/perception/debug_depth", 10)
@@ -115,6 +139,8 @@ class PerceptionNode(Node):
 
     def image_callback(self, msg):
         self.latest_rgb = msg
+        # Save image frame for image segmentation
+        self.save_camera_frame(msg)
 
     def depth_callback(self, msg):
         self.latest_depth = msg
@@ -127,6 +153,126 @@ class PerceptionNode(Node):
         self.get_logger().info(f"Received new target object information")
         self.target_pixel = [msg.x, msg.y]
         self.need_world_coordinate = True if msg.purpose == 0 else False
+
+    def text_callback(self, msg):
+        """Process the received transcribed text and use it as a prompt for object detection"""
+        text_prompt = msg.data
+        self.get_logger().info(f"Received text prompt: {text_prompt}")
+        
+        try:
+            # Ensure we have a valid image
+            if not self.image_path:
+                raise ValueError("No camera frame available for processing.")
+            
+            # Get object center coordinates based on text prompt
+            center_x, center_y = self.get_center(self.image_path, text_prompt)
+            
+            # Store target pixel for later processing in process_image()
+            self.target_pixel = (int(center_x), int(center_y))
+            
+            self.get_logger().info(f"Updated target pixel: ({center_x}, {center_y})")
+        except Exception as e:
+            self.get_logger().error(f"Error processing image: {str(e)}")
+
+    def save_camera_frame(self, msg):
+        try:
+            # Convert ROS Image message to OpenCV format
+            cv_image = self.bridge.imgmsg_to_cv2(msg, "bgr8")
+            
+            # Save the image to disk
+            image_path = "/tmp/perception_frame.jpg"  # Change this path if needed
+            cv2.imwrite(image_path, cv_image)
+            
+            # Update the image path variable
+            self.image_path = image_path
+            
+            self.get_logger().info(f"Saved camera frame to {image_path}")
+        except Exception as e:
+            self.get_logger().error(f"Failed to save camera frame: {str(e)}")
+
+    def preprocess_pil_image(self, image):
+        image = image.resize((224, 224))
+        image_array = np.array(image)
+        image_tensor = torch.tensor(image_array).permute(2, 0, 1).unsqueeze(0).float().to(self.device)
+        return image_tensor
+
+    def get_center(self, image_path, text_prompt):
+        """Find the center of the object in the image that best matches the text prompt"""
+        # Load the image
+        image = Image.open(image_path).convert("RGB")
+
+        # Load YOLOv11 model (pre-trained on COCO dataset)
+        model = YOLO("yolo11n.pt")  # YOLOv11 model
+        results = model(image_path)  # Perform inference
+
+        # Extract detection results from the tensor
+        detections = results[0].boxes.data.cpu().numpy()  # Extract bounding box data as NumPy array
+        boxes = detections[:, :4]  # Bounding box coordinates
+        scores = detections[:, 4]  # Confidence scores
+        classes = detections[:, 5].astype(int)  # Class indices
+
+        # Access class names from the YOLOv11 model
+        class_names = model.names  # Mapping class indices to names
+
+        # Ensure that boxes exist
+        if len(boxes) == 0:
+            raise ValueError("No objects detected in the image!")
+
+        # Load CLIP model
+        clip_model = create_model("ViT-B-32", pretrained="openai")
+        clip_model.eval()
+
+        clip_model = clip_model.to(self.device)
+
+        # Filter detections with CLIP and print debug information
+        filtered_boxes = []
+        confidences = []
+        similarities = []
+
+        image = results[0].orig_img
+        # convert to rgb
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+
+        for i, box in enumerate(boxes):
+            # Crop object from the image
+            xmin, ymin, xmax, ymax = map(int, box)  # Ensure indices are integers
+            # cropped_object = image.crop((xmin, ymin, xmax, ymax))
+            cropped_object = image[ymin:ymax, xmin:xmax]
+            # convert back to pil
+            cropped_object = Image.fromarray(cropped_object)
+
+            # Preprocess the cropped object and text
+            image_input = self.preprocess_pil_image(cropped_object)
+            text_input = tokenize([text_prompt]).to(self.device)
+
+            # Compute similarity using CLIP
+            with torch.no_grad():
+                image_features = clip_model.encode_image(image_input)
+                text_features = clip_model.encode_text(text_input)
+                similarity = torch.cosine_similarity(image_features, text_features).item()
+            confidences.append(scores[i])
+            similarities.append(similarity)
+
+        # Determine max clip similarity (similarity with name), this will grab multiple. it's supposed to
+        max_similarity = max(similarities)
+        similarity_indices = []
+        for i, similarity in enumerate(similarities):
+            if abs(similarity - max_similarity) < .005:  # set a tolerance for picking the best thing
+                similarity_indices.append(i)
+
+        ### Pull confidences for max similarities
+        confidences_max_similarities = [confidences[i] for i in similarity_indices]
+
+        max_confidence = max(confidences_max_similarities)  ### Using best YOLO confidence
+        max_confidence_index = confidences.index(max_confidence)
+        filtered_boxes.append((boxes[max_confidence_index], class_names[classes[max_confidence_index]],
+                               scores[max_confidence_index], similarities[max_confidence_index]))
+
+        ## Find the Center of the best box
+        center_x = (boxes[max_confidence_index][0] + boxes[max_confidence_index][2]) / 2
+        center_y = (boxes[max_confidence_index][1] + boxes[max_confidence_index][3]) / 2
+
+        return center_x, center_y
 
     def process_if_ready(self):
         """ Check if all data is synchronized and process if a target pixel is given """
@@ -178,7 +324,7 @@ class PerceptionNode(Node):
         #     print("Failed to find the desired depth_to_rgb tf. Will try later....")
         #     return
 
-        pixel_x, pixel_y = [300, 400] # TODO Get pixel values from VLM
+        pixel_x, pixel_y = self.target_pixel
         
         # Convert images
         rgb_image = self.bridge.imgmsg_to_cv2(rgb_msg, "bgr8")
@@ -206,6 +352,8 @@ class PerceptionNode(Node):
         self.get_logger().info(f"Converted Camera Coordinates: {camera_coords[0]}, {camera_coords[1]}, {camera_coords[2]}")
         # if self.locobot_type == 0:
         #     camera_coords = np.array([camera_coords[2], -1 * camera_coords[0], -1 * camera_coords[1]]) # to manually convert to match frame configuration in simulation
+
+        #self.target_pixel = None  # Clear target pixel after processing
         
         if self.need_world_coordinate:
             base_pose = odom_msg.pose.pose
