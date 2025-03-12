@@ -8,18 +8,19 @@ import time
 # ALSO PUT IN THE CALL FOR THE FINGER DISTANCE 
 
 def main():
+    
     grasp = 0
     locobot = InterbotixLocobotXS(robot_model="locobot_wx250s", arm_model="mobile_wx250s")
-
-    
 
     while grasp == 0: 
         locobot.arm.go_to_home_pose()
         time.sleep(3)
         locobot.gripper.release()
-        locobot.arm.set_ee_pose_components(x=.3, y=.02, z= -.09, roll=0.0, pitch=1.5)
+        # 0.49363025917883224, -0.07046743439902808, -0.10290414420177912
+        locobot.arm.set_ee_pose_components(x=0.49363025917883224, y=-0.07046743439902808, z=-0.10290414420177912, roll=0.0, pitch=1.5)
         time.sleep(3)
         locobot.gripper.grasp()
+        input("Did grasping succeed?")
         locobot.arm.go_to_home_pose()
         time.sleep(5)
         finger_position = locobot.gripper.get_finger_position()

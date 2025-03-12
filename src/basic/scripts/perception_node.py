@@ -42,6 +42,7 @@ from std_msgs.msg import ByteMultiArray, UInt8MultiArray, String, Float32MultiAr
 from PIL import Image as pil_image
 import tf2_ros
 import torch
+from std_msgs.msg import Bool
 import cv2
 from ultralytics import YOLO
 from open_clip import create_model, tokenize  # Assuming these are defined elsewhere
@@ -75,6 +76,7 @@ class PerceptionNode(Node):
         self.create_subscription(Image, depth_img_topics[self.locobot_type], self.depth_callback, qos_profile)
         self.create_subscription(Odometry, odom_topics[self.locobot_type], self.odom_callback, qos_profile)
         self.create_subscription(TargetObject, "object", self.object_callback, 10)
+        # self.create_subscription(Bool, "manipulation/grasp_success", self.next_step_callback, qos_profile)
         
         # Subscribe to transcribed text
         self.text_subscription = self.create_subscription(String, 'transcribed_text', self.text_callback, 10)
@@ -97,6 +99,7 @@ class PerceptionNode(Node):
         self.target_pixel = None
         self.need_world_coordinate = False # Always False for Locobot 3
         self.image_path = None
+        # self.needs_new_image = False 
         
         self.get_logger().info("Waiting for RGB Camera Info....")
         self.rgb_camera_info = wait_for_message(CameraInfo, self, rgb_info_topics[self.locobot_type])[1]
@@ -129,14 +132,17 @@ class PerceptionNode(Node):
         self.pc_pub = self.create_publisher(PointCloud2, "/perception/debug_pc", 10)
 
         # Locobot instance for debugging purpose
-        if self.debug and self.locobot_type > 0:
-            self.locobot = InterbotixLocobotXS(robot_model="locobot_wx250s", arm_model="mobile_wx250s")
-            # Comment this if you do not need to tune the offset values anymore
-            self.locobot.gripper.release()
-            self.locobot.arm.go_to_sleep_pose()
-            time.sleep(1.0)
+        # if self.debug and self.locobot_type > 0:
+        #     self.locobot = InterbotixLocobotXS(robot_model="locobot_wx250s", arm_model="mobile_wx250s")
+        #     # Comment this if you do not need to tune the offset values anymore
+        #     self.locobot.gripper.release()
+        #     self.locobot.arm.go_to_sleep_pose()
+        #     time.sleep(1.0)
 
         self.get_logger().info("Perception Node Successfully created")
+
+    # def next_step_callback(self, msg):
+    #     self.needs_new_image = msg 
 
     def image_callback(self, msg):
         self.latest_rgb = msg
@@ -172,8 +178,10 @@ class PerceptionNode(Node):
             
             # Store target pixel for later processing in process_image()
             self.target_pixel = (int(center_x), int(center_y))
+            print("VLM gave", self.target_pixel)
             
             self.get_logger().info(f"Updated target pixel: ({center_x}, {center_y})")
+            # self.needs_new_image = True 
         except Exception as e:
             self.get_logger().error(f"Error processing image: {str(e)}")
 
@@ -213,6 +221,7 @@ class PerceptionNode(Node):
 
         # Extract detection results from the tensor
         detections = results[0].boxes.data.cpu().numpy()  # Extract bounding box data as NumPy array
+        print(detections)
         boxes = detections[:, :4]  # Bounding box coordinates
         scores = detections[:, 4]  # Confidence scores
         classes = detections[:, 5].astype(int)  # Class indices
@@ -220,9 +229,7 @@ class PerceptionNode(Node):
         # Access class names from the YOLOv11 model
         class_names = model.names  # Mapping class indices to names
 
-        # Ensure that boxes exist
-        if len(boxes) == 0:
-            raise ValueError("No objects detected in the image!")
+
 
         # Load CLIP model
         clip_model = create_model("ViT-B-32", pretrained="openai")
@@ -238,6 +245,7 @@ class PerceptionNode(Node):
         image = results[0].orig_img
         # convert to rgb
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        # cv2.imshow("Image for Classification", image)
 
         for i, box in enumerate(boxes):
             # Crop object from the image
@@ -306,6 +314,7 @@ class PerceptionNode(Node):
         
         # Process image with these copies
         self.process_image(rgb_msg, depth_msg, camera_info_msg, odom_msg)
+        # self.needs_new_image = False 
 
     def process_image(self, rgb_msg, depth_msg, camera_info_msg, odom_msg):
         self.get_logger().info("Image Processing Started")
@@ -343,6 +352,8 @@ class PerceptionNode(Node):
         if self.debug:
             debug_image = rgb_image.copy()
             cv2.circle(debug_image, (pixel_x, pixel_y), 5, (0, 0, 255), -1)
+            image_filename = f'saved_images/image_{pixel_x}_{pixel_y}.png'
+            cv2.imwrite(image_filename, debug_image)
             debug_img_msg = self.bridge.cv2_to_imgmsg(debug_image, "bgr8")
             debug_img_msg.header = rgb_msg.header
             self.debug_image_pub.publish(debug_img_msg)
@@ -383,10 +394,10 @@ class PerceptionNode(Node):
                 x_offset = 0.0
                 y_offset = 0.0
                 z_offset = 0.0
-                input("Waiting for robot arm movement confirmation")
-                self.locobot.gripper.release()
-                self.locobot.arm.set_ee_pose_components(x=base_coords[0] + x_offset, y=base_coords[1]+y_offset, z=base_coords[2]+z_offset, roll=0.0, pitch=1.0)
-                self.locobot.gripper.grasp()
+                # input("Waiting for robot arm movement confirmation")
+                # self.locobot.gripper.release()
+                # self.locobot.arm.set_ee_pose_components(x=base_coords[0] + x_offset, y=base_coords[1]+y_offset, z=base_coords[2]+z_offset, roll=0.0, pitch=1.0)
+                # self.locobot.gripper.grasp()
 
         # For debug purpose
         if self.debug:
@@ -398,8 +409,8 @@ class PerceptionNode(Node):
             # self.publish_pointcloud(rgb_image, depth_image)
 
         # Empty the current prompt to avoid running image processing again
-        #self.target_pixel = None
-        #self.image_path = None
+        self.target_pixel = None
+        self.image_path = None
 
     def get_transform(self, ref_frame, target_frame, timestamp = rclpy.time.Time(), timeout_margin = 1.0):
         try:
@@ -507,6 +518,15 @@ class PerceptionNode(Node):
         target_msg.y = coords[1]
         target_msg.z = coords[2]
 
+        target_msg.pose = PoseStamped()
+        target_msg.pose.pose.position.x = coords[0]
+        target_msg.pose.pose.position.y = coords[1]
+        target_msg.pose.pose.position.z = coords[2]
+        target_msg.pose.pose.orientation.x = 0.0
+        target_msg.pose.pose.orientation.y = 0.0
+        target_msg.pose.pose.orientation.z = 0.0
+        target_msg.pose.pose.orientation.w = 1.0 # cos(theta/2)
+
         if self.latest_odom:
             # Extract robot position from latest odometry
             robot_x = self.latest_odom.pose.pose.position.x
@@ -517,9 +537,10 @@ class PerceptionNode(Node):
             distance = np.sqrt((robot_x - coords[0])**2 + (robot_y - coords[1])**2 + (robot_z - coords[2])**2)
 
             # Set purpose = 1 if within threshold distance
-            target_msg.purpose = 1 if distance < 0.1 else 0  # Adjust threshold as needed
+            target_msg.purpose = 1 if distance < 0.45 else 0  # Adjust threshold as needed
+
         else:
-            target_msg.purpose = 0  # Default to 0 if no odometry data available
+            target_msg.purpose = 1  # Default to 0 if no odometry data available
 
         self.target_coord_pub.publish(target_msg)
         self.get_logger().info(f"Published target: ({coords[0]}, {coords[1]}, {coords[2]}), Purpose: {target_msg.purpose}")
