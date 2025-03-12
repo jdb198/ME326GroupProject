@@ -11,6 +11,7 @@ from rclpy.qos import QoSProfile, ReliabilityPolicy
 from visualization_msgs.msg import Marker
 from basic.msg import TargetObject
 import copy
+import time
 
 class LocobotBaseMotionTracking(Node):
     def __init__(self, target_pose=None):
@@ -24,8 +25,8 @@ class LocobotBaseMotionTracking(Node):
         self.velocity_publisher = self.create_publisher(Twist, '/locobot/mobile_base/cmd_vel', 10)
         self.odom_subscription = self.create_subscription(Odometry, '/locobot/mobile_base/odom', self.odom_callback, qos_profile)
         self.next_step_publisher = self.create_publisher(Bool, '/start_manipulation', 10)
-        # self.nav_pose_subscriber = self.create_subscription(PoseStamped, '/camera_pose_receive', self.posestamp_callback, 10)
-        self.target_coord_subscriber = self.create_subscription(TargetObject, '/perception/target_coord', self.target_callback, 10)
+        self.nav_pose_subscriber = self.create_subscription(PoseStamped, '/camera_pose_receive', self.posestamp_callback, 10)
+        # self.target_coord_subscriber = self.create_subscription(TargetObject, '/perception/target_coord', self.target_callback, 10)
 
         self.t_init = self.get_clock().now()  # Define the initial time
 
@@ -77,8 +78,8 @@ class LocobotBaseMotionTracking(Node):
         self.length_of_integrated_error_list = 20
 
         # Define the position and angle error thresholds
-        self.position_error_thresh = 0.02
-        self.angle_error_thresh = 0.02
+        self.position_error_thresh = 0.05
+        self.angle_error_thresh = 0.05
 
         self.err_magnitude = 0  # Initialize error magnitude
 
@@ -104,17 +105,23 @@ class LocobotBaseMotionTracking(Node):
     
     # TargetObject callback function
     def target_callback(self, target_msg: TargetObject):
+    # def posestamp_callback(self, target_msg: PoseStamped):
         # Update target coordinates from perception node
-        self.get_logger().info(
-            f"Received target:\n"
-            f"- x: {target_msg.x}, y: {target_msg.y}, axis: {target_msg.axis}, purpose: {target_msg.purpose}\n"
-            f"- pose.position: ({target_msg.pose.pose.position.x}, {target_msg.pose.pose.position.y}, {target_msg.pose.pose.position.z})"
-        )
+        # self.get_logger().info(
+        #     f"Received target:\n"
+        #     f"- x: {target_msg.x}, y: {target_msg.y}, axis: {target_msg.axis}, purpose: {target_msg.purpose}\n"
+        #     f"- pose.position: ({target_msg.pose.pose.position.x}, {target_msg.pose.pose.position.y}, {target_msg.pose.pose.position.z})"
+        # )
 
         self.prev_pose = self.target_pose
         self.target_pose = target_msg.pose
+        # self.target_pose = target_msg
+
+        # For PoseStamped messages
+        # i = 0
 
         if target_msg.purpose == 0:
+        # if i == 0:
             self.get_logger().info("Moving towards target.")
 
             self.position_reached = False
@@ -145,6 +152,7 @@ class LocobotBaseMotionTracking(Node):
             return
         
         elif target_msg.purpose == 1:
+        # elif i == 1:
             self.get_logger().info("Target reached, stopping.")
 
             self.position_reached = True
@@ -154,6 +162,15 @@ class LocobotBaseMotionTracking(Node):
             reach_goal_msg = Bool()
             reach_goal_msg.data = True
             self.next_step_publisher.publish(reach_goal_msg)  # Signal next step
+
+            return
+        
+        elif target_msg.purpose == 2:
+        # elif i == 2:
+            self.get_logger().info("Returning to start position.")
+
+            self.position_reached = False
+            self.angle_reached = False
 
             return
 
@@ -295,6 +312,7 @@ class LocobotBaseMotionTracking(Node):
                     reach_goal_msg = Bool()
                     reach_goal_msg.data = True
                     self.next_step_publisher.publish(reach_goal_msg)
+                    # time.sleep(0.5)
                     return
             
             # Report the data to the user for inspection
