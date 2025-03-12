@@ -51,7 +51,7 @@ class PerceptionNode(Node):
     def __init__(self):
         super().__init__('perception_node')
 
-        self.locobot_type = 1 # 0(sim), 1, 3
+        self.locobot_type = 3 # 0(sim), 1, 3
         self.debug = True
 
         rgb_info_topics = {0: '/locobot/camera/camera_info', 1: '/locobot/camera/color/camera_info', 3: '/locobot/camera/camera/color/camera_info'}
@@ -129,12 +129,12 @@ class PerceptionNode(Node):
         self.pc_pub = self.create_publisher(PointCloud2, "/perception/debug_pc", 10)
 
         # Locobot instance for debugging purpose
-        if self.debug and self.locobot_type > 0:
-            self.locobot = InterbotixLocobotXS(robot_model="locobot_wx250s", arm_model="mobile_wx250s")
-            # Comment this if you do not need to tune the offset values anymore
-            self.locobot.gripper.release()
-            self.locobot.arm.go_to_sleep_pose()
-            time.sleep(1.0)
+        # if self.debug and self.locobot_type > 0:
+        #     self.locobot = InterbotixLocobotXS(robot_model="locobot_wx250s", arm_model="mobile_wx250s")
+        #     # Comment this if you do not need to tune the offset values anymore
+        #     self.locobot.gripper.release()
+        #     self.locobot.arm.go_to_sleep_pose()
+        #     time.sleep(1.0)
 
         self.get_logger().info("Perception Node Successfully created")
 
@@ -172,6 +172,7 @@ class PerceptionNode(Node):
             
             # Store target pixel for later processing in process_image()
             self.target_pixel = (int(center_x), int(center_y))
+            print("VLM gave", self.target_pixel)
             
             self.get_logger().info(f"Updated target pixel: ({center_x}, {center_y})")
         except Exception as e:
@@ -213,6 +214,7 @@ class PerceptionNode(Node):
 
         # Extract detection results from the tensor
         detections = results[0].boxes.data.cpu().numpy()  # Extract bounding box data as NumPy array
+        print(detections)
         boxes = detections[:, :4]  # Bounding box coordinates
         scores = detections[:, 4]  # Confidence scores
         classes = detections[:, 5].astype(int)  # Class indices
@@ -220,9 +222,7 @@ class PerceptionNode(Node):
         # Access class names from the YOLOv11 model
         class_names = model.names  # Mapping class indices to names
 
-        # Ensure that boxes exist
-        if len(boxes) == 0:
-            raise ValueError("No objects detected in the image!")
+
 
         # Load CLIP model
         clip_model = create_model("ViT-B-32", pretrained="openai")
@@ -238,6 +238,7 @@ class PerceptionNode(Node):
         image = results[0].orig_img
         # convert to rgb
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        # cv2.imshow("Image for Classification", image)
 
         for i, box in enumerate(boxes):
             # Crop object from the image
@@ -383,10 +384,10 @@ class PerceptionNode(Node):
                 x_offset = 0.0
                 y_offset = 0.0
                 z_offset = 0.0
-                input("Waiting for robot arm movement confirmation")
-                self.locobot.gripper.release()
-                self.locobot.arm.set_ee_pose_components(x=base_coords[0] + x_offset, y=base_coords[1]+y_offset, z=base_coords[2]+z_offset, roll=0.0, pitch=1.0)
-                self.locobot.gripper.grasp()
+                # input("Waiting for robot arm movement confirmation")
+                # self.locobot.gripper.release()
+                # self.locobot.arm.set_ee_pose_components(x=base_coords[0] + x_offset, y=base_coords[1]+y_offset, z=base_coords[2]+z_offset, roll=0.0, pitch=1.0)
+                # self.locobot.gripper.grasp()
 
         # For debug purpose
         if self.debug:
@@ -398,8 +399,8 @@ class PerceptionNode(Node):
             # self.publish_pointcloud(rgb_image, depth_image)
 
         # Empty the current prompt to avoid running image processing again
-        #self.target_pixel = None
-        #self.image_path = None
+        self.target_pixel = None
+        self.image_path = None
 
     def get_transform(self, ref_frame, target_frame, timestamp = rclpy.time.Time(), timeout_margin = 1.0):
         try:
@@ -519,7 +520,7 @@ class PerceptionNode(Node):
             # Set purpose = 1 if within threshold distance
             target_msg.purpose = 1 if distance < 0.1 else 0  # Adjust threshold as needed
         else:
-            target_msg.purpose = 0  # Default to 0 if no odometry data available
+            target_msg.purpose = 1  # Default to 0 if no odometry data available
 
         self.target_coord_pub.publish(target_msg)
         self.get_logger().info(f"Published target: ({coords[0]}, {coords[1]}, {coords[2]}), Purpose: {target_msg.purpose}")
