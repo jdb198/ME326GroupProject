@@ -508,6 +508,15 @@ class PerceptionNode(Node):
         target_msg.y = coords[1]
         target_msg.z = coords[2]
 
+        target_msg.pose = PoseStamped()
+        target_msg.pose.position.x = coords[0]
+        target_msg.pose.position.y = coords[1]
+        target_msg.pose.position.z = coords[2]
+        target_msg.pose.orientation.x = 0.0
+        target_msg.pose.orientation.y = 0.0
+        target_msg.pose.orientation.z = 0.0
+        target_msg.pose.orientation.w = 1.0 # cos(theta/2)
+
         if self.latest_odom:
             # Extract robot position from latest odometry
             robot_x = self.latest_odom.pose.pose.position.x
