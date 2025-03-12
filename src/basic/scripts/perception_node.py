@@ -42,6 +42,7 @@ from std_msgs.msg import ByteMultiArray, UInt8MultiArray, String, Float32MultiAr
 from PIL import Image as pil_image
 import tf2_ros
 import torch
+from std_msgs.msg import Bool
 import cv2
 from ultralytics import YOLO
 from open_clip import create_model, tokenize  # Assuming these are defined elsewhere
@@ -51,7 +52,7 @@ class PerceptionNode(Node):
     def __init__(self):
         super().__init__('perception_node')
 
-        self.locobot_type = 3 # 0(sim), 1, 3
+        self.locobot_type = 1 # 0(sim), 1, 3
         self.debug = True
 
         rgb_info_topics = {0: '/locobot/camera/camera_info', 1: '/locobot/camera/color/camera_info', 3: '/locobot/camera/camera/color/camera_info'}
@@ -74,7 +75,8 @@ class PerceptionNode(Node):
         self.create_subscription(Image, rgb_img_topics[self.locobot_type], self.image_callback, qos_profile)
         self.create_subscription(Image, depth_img_topics[self.locobot_type], self.depth_callback, qos_profile)
         self.create_subscription(Odometry, odom_topics[self.locobot_type], self.odom_callback, qos_profile)
-        self.create_subscription(TargetObject, "object", self.object_callback, 10)
+        # self.create_subscription(TargetObject, "object", self.object_callback, 10)
+        # self.create_subscription(Bool, "manipulation/grasp_success", self.next_step_callback, qos_profile)
         
         # Subscribe to transcribed text
         self.text_subscription = self.create_subscription(String, 'transcribed_text', self.text_callback, 10)
@@ -95,8 +97,12 @@ class PerceptionNode(Node):
         self.latest_depth = None
         self.latest_odom = None
         self.target_pixel = None
-        self.need_world_coordinate = False # Always False for Locobot 3
+        self.need_world_coordinate = True # Always False for Locobot 3
         self.image_path = None
+        self.saved_world_coord = None
+        self.text_msg = None
+        self.fail_count = 0
+        # self.needs_new_image = False 
         
         self.get_logger().info("Waiting for RGB Camera Info....")
         self.rgb_camera_info = wait_for_message(CameraInfo, self, rgb_info_topics[self.locobot_type])[1]
@@ -138,6 +144,9 @@ class PerceptionNode(Node):
 
         self.get_logger().info("Perception Node Successfully created")
 
+    # def next_step_callback(self, msg):
+    #     self.needs_new_image = msg 
+
     def image_callback(self, msg):
         self.latest_rgb = msg
         # Save image frame for image segmentation
@@ -149,16 +158,19 @@ class PerceptionNode(Node):
     def odom_callback(self, msg):
         self.latest_odom = msg
     
-    def object_callback(self, msg):
-        """ Store the image_segment_node-given object information and trigger processing """
-        self.get_logger().info(f"Received new target object information")
-        #self.target_pixel = [msg.x, msg.y]
-        self.need_world_coordinate = True if msg.purpose == 0 else False
+    # def object_callback(self, msg):
+    #     """ Store the image_segment_node-given object information and trigger processing """
+    #     self.get_logger().info(f"Received new target object information")
+    #     #self.target_pixel = [msg.x, msg.y]
+    #     self.need_world_coordinate = True if msg.purpose == 0 else False
 
     def text_callback(self, msg):
         """Process the received transcribed text and use it as a prompt for object detection"""
+        self.text_msg = msg
         text_prompt = msg.data
         self.get_logger().info(f"Received text prompt: {text_prompt}")
+        text_prompt = text_prompt[:-1].lower()
+        print("Parsed Text: ",text_prompt)
         
         try:
             # Ensure we have a valid image
@@ -175,6 +187,7 @@ class PerceptionNode(Node):
             print("VLM gave", self.target_pixel)
             
             self.get_logger().info(f"Updated target pixel: ({center_x}, {center_y})")
+            # self.needs_new_image = True 
         except Exception as e:
             self.get_logger().error(f"Error processing image: {str(e)}")
 
@@ -209,7 +222,7 @@ class PerceptionNode(Node):
         image = pil_image.open(image_path).convert("RGB")
 
         # Load YOLOv11 model (pre-trained on COCO dataset)
-        model = YOLO("yolo11n.pt")  # YOLOv11 model
+        model = YOLO("yolo11m.pt")  # YOLOv11 model
         results = model(image_path)  # Perform inference
 
         # Extract detection results from the tensor
@@ -307,6 +320,7 @@ class PerceptionNode(Node):
         
         # Process image with these copies
         self.process_image(rgb_msg, depth_msg, camera_info_msg, odom_msg)
+        # self.needs_new_image = False 
 
     def process_image(self, rgb_msg, depth_msg, camera_info_msg, odom_msg):
         self.get_logger().info("Image Processing Started")
@@ -321,7 +335,12 @@ class PerceptionNode(Node):
         if not self.need_world_coordinate and not camera_to_arm_base:
             print("Failed to find the desired camera_to_arm__base tf. Will try later....")
             return
-        
+        camera_T_arm_base = self.transform_to_matrix(camera_to_arm_base)
+
+        base_to_camera = self.get_transform(self.base_link_frame, self.camera_frame)
+        base_T_camera = self.transform_to_matrix(base_to_camera)
+        base_T_armbase = base_T_camera@camera_T_arm_base
+
         # print("RGB image reference frame: ", rgb_msg.header.frame_id)
         # print("Depth image reference frame: ", depth_msg.header.frame_id)
         # depth_to_rgb = self.get_transform(self.depth_camera_frame, self.camera_frame, timestamp) # finding tf at exact timestamp is hard
@@ -344,6 +363,8 @@ class PerceptionNode(Node):
         if self.debug:
             debug_image = rgb_image.copy()
             cv2.circle(debug_image, (pixel_x, pixel_y), 5, (0, 0, 255), -1)
+            image_filename = f'saved_images/image_{pixel_x}_{pixel_y}.png'
+            cv2.imwrite(image_filename, debug_image)
             debug_img_msg = self.bridge.cv2_to_imgmsg(debug_image, "bgr8")
             debug_img_msg.header = rgb_msg.header
             self.debug_image_pub.publish(debug_img_msg)
@@ -363,19 +384,46 @@ class PerceptionNode(Node):
         #self.target_pixel = None  # Clear target pixel after processing
         
         if self.need_world_coordinate:
-            base_pose = odom_msg.pose.pose
-            print("Robot base pose: ", base_pose)
-            world_coords = self.camera_to_world(camera_coords, base_pose, camera_to_base)
-            self.get_logger().info(f"Converted World Coordinates: {world_coords[0]}, {world_coords[1]}, {world_coords[2]}")
-            self.publish_target_coord(world_coords)
+            camera_coords_homogeneous = np.append(camera_coords, 1)  # Convert to (x, y, z, 1)
+            camera_to_base_matrix = self.transform_to_matrix(camera_to_base)
+            base_coords = camera_to_base_matrix @ camera_coords_homogeneous
+            self.get_logger().info(f"Converted Base Coordinates: {base_coords[0]}, {base_coords[1]}, {base_coords[2]}")
+            # base_pose = odom_msg.pose.pose
+            # print("Robot base pose: ", base_pose)
+            # world_coords = self.camera_to_world(camera_coords, base_pose, camera_to_base)
+            # self.saved_world_coord = world_coords
+            # self.get_logger().info(f"Converted World Coordinates: {world_coords[0]}, {world_coords[1]}, {world_coords[2]}")
+            # if base_coords[0] < 0.3 or base_coords[0] > 0.8 or base_coords[1] > 0.2 or base_coords[1] < -0.1 or base_coords[2] > 0.1 or base_coords[2] < 0.0:
+            #     print("Unexpected Output... Will run YOLO again")
+            #     self.text_callback(self.text_msg)
+            #     self.fail_count += 1
+            #     if self.fail_count < 1:
+            #         return
+            #     base_coords[1] = 0.0
+            base_coords[1] = 0.0
+            self.fail_count=0
+            self.publish_target_coord(base_coords)
+            self.need_world_coordinate = False
         else:
+            # second call
+            # base_pose = odom_msg.pose.pose
+            # world_T_base = self.pose_to_matrix(base_pose)
+            # saved_coords_hom = np.append(self.saved_world_coord, 1)
+            # print(saved_coords_hom)
+            # armbase_T_target = np.linalg.inv(base_T_armbase)@np.linalg.inv(world_T_base)@saved_coords_hom
+            # armbase_p_target = armbase_T_target[:3, 3]
+            # self.publish_target_coord(armbase_p_target)
             arm_base_coords = self.camera_to_arm_base(camera_coords, camera_to_arm_base)
             self.get_logger().info(f"Converted Arm Base Coordinates: {arm_base_coords[0]}, {arm_base_coords[1]}, {arm_base_coords[2]}")
             
             # Temporary fix to avoid using critically inaccurate depth values
-            if arm_base_coords[2] < -0.2 or arm_base_coords[0] < 0.2:
-                print("Transformed the coordinate, but unexpected value. Will try again....")
-                return
+            # if arm_base_coords[0] < 0.25 or arm_base_coords[0] > 0.45 or arm_base_coords[1] < -0.1 or arm_base_coords[1] > 0.1 or arm_base_coords[2] < -0.2 or arm_base_coords[0] < 0.2:
+            #     print("Transformed the coordinate, but unexpected value. Will try again....")
+            #     self.text_callback(self.text_msg)
+            #     self.fail_count += 1
+            #     if self.fail_count < 3:
+            #         return
+            self.fail_count=0
             
             self.publish_target_coord(arm_base_coords)
             # Comment this if you do not need to tune the offset values anymore
@@ -509,15 +557,16 @@ class PerceptionNode(Node):
         target_msg.z = coords[2]
 
         target_msg.pose = PoseStamped()
-        target_msg.pose.position.x = coords[0]
-        target_msg.pose.position.y = coords[1]
-        target_msg.pose.position.z = coords[2]
-        target_msg.pose.orientation.x = 0.0
-        target_msg.pose.orientation.y = 0.0
-        target_msg.pose.orientation.z = 0.0
-        target_msg.pose.orientation.w = 1.0 # cos(theta/2)
+        target_msg.pose.pose.position.x = coords[0]
+        target_msg.pose.pose.position.y = coords[1]
+        target_msg.pose.pose.position.z = coords[2]
+        target_msg.pose.pose.orientation.x = 0.0
+        target_msg.pose.pose.orientation.y = 0.0
+        target_msg.pose.pose.orientation.z = 0.0
+        target_msg.pose.pose.orientation.w = 1.0 # cos(theta/2)
 
-        if self.latest_odom:
+        if self.need_world_coordinate:
+        # if self.latest_odom:
             # Extract robot position from latest odometry
             robot_x = self.latest_odom.pose.pose.position.x
             robot_y = self.latest_odom.pose.pose.position.y
@@ -526,8 +575,10 @@ class PerceptionNode(Node):
             # Calculate distance to target
             distance = np.sqrt((robot_x - coords[0])**2 + (robot_y - coords[1])**2 + (robot_z - coords[2])**2)
 
+
             # Set purpose = 1 if within threshold distance
-            target_msg.purpose = 1 if distance < 0.1 else 0  # Adjust threshold as needed
+            target_msg.purpose = 1 if distance <= 0.5 else 0  # Adjust threshold as needed
+
         else:
             target_msg.purpose = 1  # Default to 0 if no odometry data available
 
