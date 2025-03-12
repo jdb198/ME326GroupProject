@@ -104,8 +104,8 @@ class LocobotBaseMotionTracking(Node):
     #     self.angle_reached = False
     
     # TargetObject callback function
-    # def target_callback(self, target_msg: TargetObject):
-    def posestamp_callback(self, target_msg: PoseStamped):
+    def target_callback(self, target_msg: TargetObject):
+    # def posestamp_callback(self, target_msg: PoseStamped):
         # Update target coordinates from perception node
         # self.get_logger().info(
         #     f"Received target:\n"
@@ -114,13 +114,14 @@ class LocobotBaseMotionTracking(Node):
         # )
 
         self.prev_pose = self.target_pose
-        # self.target_pose = target_msg.pose
-        self.target_pose = target_msg
+        self.target_pose = target_msg.pose
+        # self.target_pose = target_msg
 
-        i = 0
+        # For PoseStamped messages
+        # i = 0
 
-        # if target_msg.purpose == 0:
-        if i == 0:
+        if target_msg.purpose == 0:
+        # if i == 0:
             self.get_logger().info("Moving towards target.")
 
             self.position_reached = False
@@ -150,8 +151,8 @@ class LocobotBaseMotionTracking(Node):
 
             return
         
-        # elif target_msg.purpose == 1:
-        elif i == 1:
+        elif target_msg.purpose == 1:
+        # elif i == 1:
             self.get_logger().info("Target reached, stopping.")
 
             self.position_reached = True
@@ -161,6 +162,15 @@ class LocobotBaseMotionTracking(Node):
             reach_goal_msg = Bool()
             reach_goal_msg.data = True
             self.next_step_publisher.publish(reach_goal_msg)  # Signal next step
+
+            return
+        
+        elif target_msg.purpose == 2:
+        # elif i == 2:
+            self.get_logger().info("Returning to start position.")
+
+            self.position_reached = False
+            self.angle_reached = False
 
             return
 
@@ -302,7 +312,7 @@ class LocobotBaseMotionTracking(Node):
                     reach_goal_msg = Bool()
                     reach_goal_msg.data = True
                     self.next_step_publisher.publish(reach_goal_msg)
-                    time.sleep(0.5)
+                    # time.sleep(0.5)
                     return
             
             # Report the data to the user for inspection
