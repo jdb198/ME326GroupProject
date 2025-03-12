@@ -5,7 +5,7 @@ import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import PoseStamped, Twist, Point
 from nav_msgs.msg import Odometry
-from std_msgs.msg import Bool
+from std_msgs.msg import Bool, String
 import numpy as np
 from rclpy.qos import QoSProfile, ReliabilityPolicy
 from visualization_msgs.msg import Marker
@@ -24,9 +24,14 @@ class LocobotBaseMotionTracking(Node):
         # Define publisher and subscribers
         self.velocity_publisher = self.create_publisher(Twist, '/locobot/mobile_base/cmd_vel', 10)
         self.odom_subscription = self.create_subscription(Odometry, '/locobot/mobile_base/odom', self.odom_callback, qos_profile)
-        self.next_step_publisher = self.create_publisher(Bool, '/start_manipulation', 10)
-        self.nav_pose_subscriber = self.create_subscription(PoseStamped, '/camera_pose_receive', self.posestamp_callback, 10)
-        # self.target_coord_subscriber = self.create_subscription(TargetObject, '/perception/target_coord', self.target_callback, 10)
+        self.text_publisher = self.create_publisher(String, 'transcribed_text', 10)
+        # self.nav_pose_subscriber = self.create_subscription(PoseStamped, '/camera_pose_receive', self.posestamp_callback, 10)
+        self.target_coord_subscriber = self.create_subscription(TargetObject, '/perception/target_coord', self.target_callback, 10)
+        self.grasp_success_subscriber = self.create_publisher(Bool, "/manipulation/grasp_success", 10)
+        
+    
+        # self.get_new_coord = False
+        # self.feedback_loop_publisher = self.create_publisher(Bool, "manipulation/get_new_coord", 10)
 
         self.t_init = self.get_clock().now()  # Define the initial time
 
@@ -93,6 +98,10 @@ class LocobotBaseMotionTracking(Node):
         self.position_reached = False
         self.angle_reached = False
 
+        self.grasped = False
+
+        self.transcriber = False
+
         self.get_logger().info('The velocity_publisher node has started.')  # Relay node start message to user
 
     # PoseStamped callback function
@@ -102,6 +111,9 @@ class LocobotBaseMotionTracking(Node):
 
     #     self.position_reached = False
     #     self.angle_reached = False
+
+    def grasp_success_callback(self, grasp_msg: Bool):
+            self.grasped = grasp_msg
     
     # TargetObject callback function
     def target_callback(self, target_msg: TargetObject):
@@ -124,30 +136,35 @@ class LocobotBaseMotionTracking(Node):
         # if i == 0:
             self.get_logger().info("Moving towards target.")
 
+            if self.grasped == True:
+                target_msg.purpose = 2
+
             self.position_reached = False
             self.angle_reached = False
 
             # Modify target_pose x value
-            self.target_pose.pose.position.x = self.target_pose.pose.position.x - 0.25
+            self.target_pose.pose.position.x = self.target_pose.pose.position.x - 0.5
 
-            x_dist = self.target_pose.pose.position.x - self.prev_pose.pose.position.x
-            y_dist = self.target_pose.pose.position.y - self.prev_pose.pose.position.y
+            # x_dist = self.target_pose.pose.position.x - self.prev_pose.pose.position.x
+            # y_dist = self.target_pose.pose.position.y - self.prev_pose.pose.position.y
 
-            updated_target_pose = copy.deepcopy(self.prev_pose)
+            # updated_target_pose = copy.deepcopy(self.prev_pose)
 
-            if abs(x_dist) > 0.1:
-                if x_dist > 0:
-                    updated_target_pose.pose.position.x += 0.1
-                else:
-                    updated_target_pose.pose.position.x -= 0.1
+            # if abs(x_dist) > 0.1:
+            #     if x_dist > 0:
+            #         updated_target_pose.pose.position.x += 0.1
+            #     else:
+            #         updated_target_pose.pose.position.x -= 0.1
 
-            if abs(y_dist) > 0.1:
-                if y_dist > 0:
-                    updated_target_pose.pose.position.y += 0.1
-                else:
-                    updated_target_pose.pose.position.y -= 0.1
+            # if abs(y_dist) > 0.1:
+            #     if y_dist > 0:
+            #         updated_target_pose.pose.position.y += 0.1
+            #     else:
+            #         updated_target_pose.pose.position.y -= 0.1
 
-            self.target_pose = updated_target_pose
+            # self.target_pose = updated_target_pose
+
+            self.transcriber = True
 
             return
         
@@ -159,9 +176,11 @@ class LocobotBaseMotionTracking(Node):
             self.angle_reached = True
 
             self.velocity_publisher.publish(Twist())  # Stop the robot
-            reach_goal_msg = Bool()
-            reach_goal_msg.data = True
-            self.next_step_publisher.publish(reach_goal_msg)  # Signal next step
+            # reach_goal_msg = Bool()
+            # reach_goal_msg.data = False
+            # self.next_step_publisher.publish(reach_goal_msg)  # Signal next step
+
+            self.transcriber = False
 
             return
         
@@ -171,6 +190,8 @@ class LocobotBaseMotionTracking(Node):
 
             self.position_reached = False
             self.angle_reached = False
+
+            self.transcriber = False
 
             return
 
@@ -253,11 +274,11 @@ class LocobotBaseMotionTracking(Node):
             self.err_magnitude = np.linalg.norm(error_vect)
             # net_error_magnitude = np.linalg.norm(point_p_error_signal)
 
-            max_fwd_speed = 0.25  # Set a maximum turn speed (m/s)
+            max_fwd_speed = 0.1  # Set a maximum turn speed (m/s)
             min_fwd_speed = 0.05  # Ensure minimum turn speed
 
-            max_turn_speed = 1.5  # Set a maximum turn speed (rad/s)
-            min_turn_speed = 0.2  # Ensure minimum turn speed
+            max_turn_speed = 0.5  # Set a maximum turn speed (rad/s)
+            min_turn_speed = 0.1  # Ensure minimum turn speed
             
             # Publish velocity message
             control_msg = Twist()
@@ -270,6 +291,11 @@ class LocobotBaseMotionTracking(Node):
                 control_msg.angular.z = control_msg.angular.z/np.linalg.norm(control_input)
 
             self.velocity_publisher.publish(control_msg)
+
+            if self.transcriber:
+                text_msg = String()
+                text_msg.data = "Banana."
+                self.text_publisher.publish(text_msg)
 
             print("err magnitude", self.err_magnitude)
 
@@ -294,26 +320,39 @@ class LocobotBaseMotionTracking(Node):
                     control_msg.linear.x = 0.0  # Stop moving forward
                     # Increase the turning speed (higher gain)
                     Kp_turn = 1.0  # Increase this value for faster turning
-                    max_turn_speed = 1.5  # Set a maximum turn speed (rad/s)
-                    min_turn_speed = 0.2  # Ensure minimum turn speed
+                    max_turn_speed = 0.5  # Set a maximum turn speed (rad/s)
+                    min_turn_speed = 0.1  # Ensure minimum turn speed
 
                     control_msg.angular.z = Kp_turn * angle_error
 
                     # Clamp the angular speed within min and max limits
                     control_msg.angular.z = max(min_turn_speed, min(max_turn_speed, abs(control_msg.angular.z))) * np.sign(control_msg.angular.z)
-
+                    
                     self.velocity_publisher.publish(control_msg)
+
+                    if self.transcriber:
+                        text_msg = String()
+                        text_msg.data = "Banana."
+                        self.text_publisher.publish(text_msg)
+
                     print(f"angular error magnitude: {angle_error:.2f} rad")
                     return
                 else:
-                    #reset the integrated error: 
                     self.angle_reached = True
                     print("Reached goal")
-                    reach_goal_msg = Bool()
-                    reach_goal_msg.data = True
-                    self.next_step_publisher.publish(reach_goal_msg)
-                    # time.sleep(0.5)
+                    # reach_goal_msg = Bool()
+                    # reach_goal_msg.data = False
+                    # self.next_step_publisher.publish(reach_goal_msg)
                     return
+        else:
+            #reset the integrated error: 
+            self.angle_reached = True
+            print("Reached goal")
+            # reach_goal_msg = Bool()
+            # reach_goal_msg.data = False
+            # self.next_step_publisher.publish(reach_goal_msg)
+            # time.sleep(0.5)
+            return
             
             # Report the data to the user for inspection
             # self.get_logger().info(f'Odometry: ({self.x_odom:.2f}, {self.y_odom:.2f}), Target: ({self.x_current:.2f}, {self.y_current:.2f}), Error: ({err_x:.2f}, {err_y:.2f}), Kp: {self.Kp}')
