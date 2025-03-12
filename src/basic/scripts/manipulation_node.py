@@ -16,8 +16,8 @@ class ManipulationNode(Node):
     def __init__(self):
         super().__init__('manipulation_node')
 
-        self.locobot_type = 3 # 0(sim), 1, 3
-        self.offset_dict = {1: [0.0, 0.0, 0.04], 3: [0.0, 0.0, 0.04]}
+        self.locobot_type = 1 # 0(sim), 1, 3
+        self.offset_dict = {1: [-0.5, 0.0, -0.06], 3: [0.0, 0.0, 0.04]}
         self.offset = self.offset_dict[self.locobot_type]
         self.debug = True
 
@@ -50,7 +50,7 @@ class ManipulationNode(Node):
         self.locobot.arm.go_to_home_pose()
         time.sleep(0.5)
         self.locobot.gripper.release()
-        self.locobot.arm.set_ee_pose_components(x=msg.x + self.offset[0], y=msg.y + self.offset[0], z= msg.z + self.offset[0], roll=0.0, pitch=1.5)
+        self.locobot.arm.set_ee_pose_components(x=msg.x + self.offset[0], y=msg.y + self.offset[1], z= max(msg.z + self.offset[2], -0.07), roll=0.0, pitch=1.5)
         time.sleep(0.3)
         self.locobot.gripper.grasp()
         time.sleep(3.0)
