@@ -143,7 +143,7 @@ class LocobotBaseMotionTracking(Node):
             self.angle_reached = False
 
             # Modify target_pose x value
-            self.target_pose.pose.position.x = self.target_pose.pose.position.x - 0.45
+            self.target_pose.pose.position.x = self.target_pose.pose.position.x - 0.40
 
             # x_dist = self.target_pose.pose.position.x - self.prev_pose.pose.position.x
             # y_dist = self.target_pose.pose.position.y - self.prev_pose.pose.position.y
