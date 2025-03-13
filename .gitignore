@@ -1,4 +1,7 @@
 src/basic/scripts/utils/__pycache__/
+src/basic/scripts/yolo11s.pt
+src/basic/scripts/yolo11m.pt
+src/basic/scripts/yolo11x.pt
 build/
 install/
 log/

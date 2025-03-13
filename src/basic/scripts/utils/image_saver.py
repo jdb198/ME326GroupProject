@@ -18,7 +18,7 @@ class ImageSaver(Node):
         self.bridge = CvBridge()
         
         # Create a subscriber for the image topic
-        self.create_subscription(Image, '/locobot/camera/camera/color/image_raw', self.image_callback, qos_profile)
+        self.create_subscription(Image, '/locobot/camera/color/image_raw', self.image_callback, qos_profile)
         
         # Variable to count how many images we've saved
         self.image_count = 0
@@ -28,7 +28,7 @@ class ImageSaver(Node):
             os.mkdir('saved_images')
 
     def image_callback(self, msg):
-        if self.image_count >= 10:
+        if self.image_count >= 3:
             self.get_logger().info("Saved 10 images, stopping.")
             rclpy.shutdown()
             return

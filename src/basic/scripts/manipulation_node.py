@@ -7,7 +7,7 @@ import rclpy
 import rclpy.duration
 from rclpy.node import Node
 from basic.msg import TargetObject
-from std_msgs.msg import Bool
+from std_msgs.msg import Bool, String
 
 # THIS SCRIPT DOESN'T WORK WITHOUT FIXING THE PUBLISHERS AND SUBSCRIBERS. 
 # ALSO PUT IN THE CALL FOR THE FINGER DISTANCE 
@@ -17,7 +17,7 @@ class ManipulationNode(Node):
         super().__init__('manipulation_node')
 
         self.locobot_type = 1 # 0(sim), 1, 3
-        self.offset_dict = {1: [-0.5, 0.0, -0.06], 3: [0.0, 0.0, 0.04]}
+        self.offset_dict = {1: [0.0, 0.0, -0.007], 3: [0.0, 0.0, 0.04]}
         self.offset = self.offset_dict[self.locobot_type]
         self.debug = True
 
@@ -28,6 +28,7 @@ class ManipulationNode(Node):
 
         # Publisher
         self.grasp_success_pub = self.create_publisher(Bool, "/manipulation/grasp_success", 10)
+        self.text_publisher = self.create_publisher(String, 'transcribed_text', 10)
 
         # Locobot instance for debugging purpose
         self.locobot = InterbotixLocobotXS(robot_model="locobot_wx250s", arm_model="mobile_wx250s")
@@ -50,7 +51,7 @@ class ManipulationNode(Node):
         self.locobot.arm.go_to_home_pose()
         time.sleep(0.5)
         self.locobot.gripper.release()
-        self.locobot.arm.set_ee_pose_components(x=msg.x + self.offset[0], y=msg.y + self.offset[1], z= max(msg.z + self.offset[2], -0.07), roll=0.0, pitch=1.5)
+        self.locobot.arm.set_ee_pose_components(x=msg.x + self.offset[0], y=msg.y + self.offset[1], z= max(msg.z + self.offset[2], -0.1), roll=0.0, pitch=1.5)
         time.sleep(0.3)
         self.locobot.gripper.grasp()
         time.sleep(3.0)
@@ -64,8 +65,10 @@ class ManipulationNode(Node):
 
         print('Failure')
         self.publish_grasp_success(False)
-        input('Failed to grasp... measure your offset')
         self.locobot.arm.go_to_sleep_pose()
+        retry_msg = String()
+        retry_msg.data = 'banana'
+        self.text_publisher.publish(retry_msg)
 
 def main(args=None):
     rclpy.init(args=args)

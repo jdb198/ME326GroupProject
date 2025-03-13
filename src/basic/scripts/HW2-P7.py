@@ -143,7 +143,8 @@ class LocobotBaseMotionTracking(Node):
             self.angle_reached = False
 
             # Modify target_pose x value
-            self.target_pose.pose.position.x = self.target_pose.pose.position.x - 0.5
+            self.target_pose.pose.position.x = self.target_pose.pose.position.x - 0.45
+            print(self.target_pose.pose.position.x)
 
             # x_dist = self.target_pose.pose.position.x - self.prev_pose.pose.position.x
             # y_dist = self.target_pose.pose.position.y - self.prev_pose.pose.position.y
@@ -347,7 +348,7 @@ class LocobotBaseMotionTracking(Node):
         else:
             #reset the integrated error: 
             self.angle_reached = True
-            print("Reached goal")
+            # print("Reached goal")
             # reach_goal_msg = Bool()
             # reach_goal_msg.data = False
             # self.next_step_publisher.publish(reach_goal_msg)
