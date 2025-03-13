@@ -99,10 +99,10 @@ class PerceptionNode(Node):
         self.target_pixel = None
         self.need_world_coordinate = True # Always False for Locobot 3
         self.image_path = None
-        self.saved_world_coord = None
+        self.saved_world_coords = None
         self.text_msg = None
         self.fail_count = 0
-        # self.needs_new_image = False 
+        self.YOLO_called = False
         
         self.get_logger().info("Waiting for RGB Camera Info....")
         self.rgb_camera_info = wait_for_message(CameraInfo, self, rgb_info_topics[self.locobot_type])[1]
@@ -166,6 +166,11 @@ class PerceptionNode(Node):
 
     def text_callback(self, msg):
         """Process the received transcribed text and use it as a prompt for object detection"""
+        if self.YOLO_called:
+            self.get_logger().warn(f"Received text prompt: {text_prompt}")
+            self.target_pixel = (0, 0)
+            return
+
         self.text_msg = msg
         text_prompt = msg.data
         self.get_logger().info(f"Received text prompt: {text_prompt}")
@@ -187,7 +192,7 @@ class PerceptionNode(Node):
             print("VLM gave", self.target_pixel)
             
             self.get_logger().info(f"Updated target pixel: ({center_x}, {center_y})")
-            # self.needs_new_image = True 
+            self.YOLO_called = True
         except Exception as e:
             self.get_logger().error(f"Error processing image: {str(e)}")
 
@@ -234,8 +239,6 @@ class PerceptionNode(Node):
 
         # Access class names from the YOLOv11 model
         class_names = model.names  # Mapping class indices to names
-
-
 
         # Load CLIP model
         clip_model = create_model("ViT-B-32", pretrained="openai")
@@ -326,26 +329,22 @@ class PerceptionNode(Node):
         self.get_logger().info("Image Processing Started")
         # Get transform from camera frame to desired link frame
         # timestamp = rgb_msg.header.stamp #getting tf at the exact timestamp is hard in the real robot
-        camera_to_base = self.get_transform(self.camera_frame, self.base_link_frame)
+        camera_to_base = self.get_transform(self.camera_frame, self.base_link_frame) # pose of camera relative to base
         if self.need_world_coordinate and not camera_to_base:
             print("Failed to find the desired camera_to_base tf. Will try later....")
             return
 
-        camera_to_arm_base = self.get_transform(self.camera_frame, self.arm_base_link_frame)
-        if not self.need_world_coordinate and not camera_to_arm_base:
-            print("Failed to find the desired camera_to_arm__base tf. Will try later....")
+        camera_to_arm_base = self.get_transform(self.camera_frame, self.arm_base_link_frame) # pose of camera relative to arm base
+        base_to_arm_base = self.get_transform(self.base_link_frame, self.arm_base_link_frame) # pose of base relative to arm_base
+        if not self.need_world_coordinate and (not camera_to_arm_base or not base_to_arm_base):
+            print("Failed to find the desired camera_to_arm__base or base_to_arm_base tf. Will try later....")
             return
-        camera_T_arm_base = self.transform_to_matrix(camera_to_arm_base)
-
-        base_to_camera = self.get_transform(self.base_link_frame, self.camera_frame)
-        base_T_camera = self.transform_to_matrix(base_to_camera)
-        base_T_armbase = base_T_camera@camera_T_arm_base
 
         # print("RGB image reference frame: ", rgb_msg.header.frame_id)
         # print("Depth image reference frame: ", depth_msg.header.frame_id)
         # depth_to_rgb = self.get_transform(self.depth_camera_frame, self.camera_frame, timestamp) # finding tf at exact timestamp is hard
         # depth_to_rgb = self.get_transform(self.depth_camera_frame, self.camera_frame)
-        self.depth_to_rgb_tf = self.get_transform(self.depth_camera_frame, self.camera_frame)
+        self.depth_to_rgb_tf = self.get_transform(self.depth_camera_frame, self.camera_frame) # pose of depth relative to color frame
         # if self.locobot_type > 0 and not depth_to_rgb:
         #     print("Failed to find the desired depth_to_rgb tf. Will try later....")
         #     return
@@ -384,15 +383,10 @@ class PerceptionNode(Node):
         #self.target_pixel = None  # Clear target pixel after processing
         
         if self.need_world_coordinate:
-            camera_coords_homogeneous = np.append(camera_coords, 1)  # Convert to (x, y, z, 1)
-            camera_to_base_matrix = self.transform_to_matrix(camera_to_base)
-            base_coords = camera_to_base_matrix @ camera_coords_homogeneous
-            self.get_logger().info(f"Converted Base Coordinates: {base_coords[0]}, {base_coords[1]}, {base_coords[2]}")
-            # base_pose = odom_msg.pose.pose
-            # print("Robot base pose: ", base_pose)
-            # world_coords = self.camera_to_world(camera_coords, base_pose, camera_to_base)
-            # self.saved_world_coord = world_coords
-            # self.get_logger().info(f"Converted World Coordinates: {world_coords[0]}, {world_coords[1]}, {world_coords[2]}")
+            # camera_coords_homogeneous = np.append(camera_coords, 1)  # Convert to (x, y, z, 1)
+            # camera_to_base_matrix = self.transform_to_matrix(camera_to_base) #base_T_camera
+            # base_coords = camera_to_base_matrix @ camera_coords_homogeneous
+            # self.get_logger().info(f"Converted Base Coordinates: {base_coords[0]}, {base_coords[1]}, {base_coords[2]}")
             # if base_coords[0] < 0.3 or base_coords[0] > 0.8 or base_coords[1] > 0.2 or base_coords[1] < -0.1 or base_coords[2] > 0.1 or base_coords[2] < 0.0:
             #     print("Unexpected Output... Will run YOLO again")
             #     self.text_callback(self.text_msg)
@@ -400,29 +394,49 @@ class PerceptionNode(Node):
             #     if self.fail_count < 1:
             #         return
             #     base_coords[1] = 0.0
-            base_coords[1] = 0.0
+            # self.fail_count=0
+            # self.publish_target_coord(base_coords)
+            # self.need_world_coordinate = False
+            base_pose = odom_msg.pose.pose
+            print("Robot base pose: ", base_pose)
+            world_coords = self.camera_to_world(camera_coords, base_pose, camera_to_base)
+            self.get_logger().info(f"Converted World Coordinates: {world_coords[0]}, {world_coords[1]}, {world_coords[2]}")
+            if world_coords[0] < 0.3 or world_coords[0] > 0.8 or world_coords[1] > 0.2 or world_coords[1] < -0.1 or world_coords[2] > 0.1 or world_coords[2] < 0.0:
+                print("Unexpected Output... Will try transformation again")
+                # self.text_callback(self.text_msg)
+                self.fail_count += 1
+                if self.fail_count < 1:
+                    return
+                world_coords[1] = 0.0 # kinda hard-coded stuff
+            # world_coords[1] = 0.0 
+            self.saved_world_coords = world_coords
             self.fail_count=0
-            self.publish_target_coord(base_coords)
+            self.publish_target_coord(world_coords)
             self.need_world_coordinate = False
         else:
-            # second call
-            # base_pose = odom_msg.pose.pose
-            # world_T_base = self.pose_to_matrix(base_pose)
-            # saved_coords_hom = np.append(self.saved_world_coord, 1)
-            # print(saved_coords_hom)
-            # armbase_T_target = np.linalg.inv(base_T_armbase)@np.linalg.inv(world_T_base)@saved_coords_hom
-            # armbase_p_target = armbase_T_target[:3, 3]
-            # self.publish_target_coord(armbase_p_target)
-            arm_base_coords = self.camera_to_arm_base(camera_coords, camera_to_arm_base)
+            # second call: ignore the second YOLO Call and just use the previous value
+            if self.saved_world_coords is not None:
+                world_pose = odom_msg.pose.pose
+                world_T_base = self.pose_to_matrix(base_pose)
+                base_T_world = np.linalg.inv(world_T_base)
+                saved_coords_hom = np.append(self.saved_world_coords, 1)
+                print(saved_coords_hom)
+                print("Will use saved coordinate, " self.saved_world_coords)
+                armbase_T_base = self.transform_to_matrix(base_to_arm_base)
+                armbase_T_target = armbase_T_base @ base_T_world @ saved_coords_h
+                arm_base_coords = armbase_T_target[:3, 3]
+            else:
+                arm_base_coords = self.camera_to_arm_base(camera_coords, camera_to_arm_base)
+
             self.get_logger().info(f"Converted Arm Base Coordinates: {arm_base_coords[0]}, {arm_base_coords[1]}, {arm_base_coords[2]}")
             
             # Temporary fix to avoid using critically inaccurate depth values
-            # if arm_base_coords[0] < 0.25 or arm_base_coords[0] > 0.45 or arm_base_coords[1] < -0.1 or arm_base_coords[1] > 0.1 or arm_base_coords[2] < -0.2 or arm_base_coords[0] < 0.2:
-            #     print("Transformed the coordinate, but unexpected value. Will try again....")
-            #     self.text_callback(self.text_msg)
-            #     self.fail_count += 1
-            #     if self.fail_count < 3:
-            #         return
+            if arm_base_coords[0] < 0.2 or arm_base_coords[0] > 0.5 or arm_base_coords[1] < -0.1 or arm_base_coords[1] > 0.1 or arm_base_coords[2] < -0.2 or arm_base_coords[0] < 0.2:
+                print("Transformed the coordinate, but unexpected value. Will try transformation again....")
+                # self.text_callback(self.text_msg)
+                self.fail_count += 1
+                if self.fail_count < 5:
+                    return
             self.fail_count=0
             
             self.publish_target_coord(arm_base_coords)
@@ -488,7 +502,7 @@ class PerceptionNode(Node):
 
     def camera_to_arm_base(self, camera_coords, camera_to_arm_base):
         # Convert base_link → camera_link transform to matrix
-        camera_to_arm_base_matrix = self.transform_to_matrix(camera_to_arm_base)
+        camera_to_arm_base_matrix = self.transform_to_matrix(camera_to_arm_base) # armbase_T_camera
         camera_coords_homogeneous = np.append(camera_coords, 1)  # Convert to (x, y, z, 1)
         arm_base_coords = camera_to_arm_base_matrix @ camera_coords_homogeneous
         return arm_base_coords[:3]  # Extract (x, y, z)
@@ -496,13 +510,13 @@ class PerceptionNode(Node):
     def camera_to_world(self, camera_coords, base_pose, camera_to_base):
         """ Convert camera coordinates to world coordinates using /locobot/odom and TF """
         # Convert odometry pose (base_link in locobot/odom) to matrix
-        base_to_odom_matrix = self.pose_to_matrix(base_pose)
+        base_to_odom_matrix = self.pose_to_matrix(base_pose) #world_T_base
 
         # Convert base_link → camera_link transform to matrix
-        camera_to_base_matrix = self.transform_to_matrix(camera_to_base)
+        camera_to_base_matrix = self.transform_to_matrix(camera_to_base) #base_T_camera
 
         # Compute camera-to-world transformation
-        camera_to_world_matrix = base_to_odom_matrix @ camera_to_base_matrix
+        camera_to_world_matrix = base_to_odom_matrix @ camera_to_base_matrix #world_T_camera
 
         # Convert camera point to world frame
         camera_coords_homogeneous = np.append(camera_coords, 1)  # Convert to (x, y, z, 1)
