@@ -1,0 +1,28 @@
+ros2 topic pub --once /perception/target_coord your_package_name/msg/TargetObject '{
+  "x": 1,
+  "y": 2,
+  "axis": 0,
+  "purpose": 0,
+  "pose": {
+    "header": {
+      "stamp": {
+        "sec": 0,
+        "nanosec": 0
+      },
+      "frame_id": "map"
+    },
+    "pose": {
+      "position": {
+        "x": 0.45,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "orientation": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0,
+        "w": 1.0
+      }
+    }
+  }
+}'
