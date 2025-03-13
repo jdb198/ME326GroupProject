@@ -174,9 +174,9 @@ class PerceptionNode(Node):
             target_msg.pose.pose.position.z = 0.0
             target_msg.pose.pose.orientation.x = 0.0
             target_msg.pose.pose.orientation.y = 0.0
-            target_msg.pose.pose.orientation.z = 0.0
-            target_msg.pose.pose.orientation.w = 1.0 # cos(theta/2)
-            target_msg.purpose = 0
+            target_msg.pose.pose.orientation.z = -0.7071
+            target_msg.pose.pose.orientation.w = 0.7071 # cos(theta/2)
+            target_msg.purpose = 2
             self.target_coord_pub.publish(target_msg)
     
     # def object_callback(self, msg):
@@ -313,6 +313,9 @@ class PerceptionNode(Node):
         max_confidence_index = confidences.index(max_confidence)
         filtered_boxes.append((boxes[max_confidence_index], class_names[classes[max_confidence_index]],
                                scores[max_confidence_index], similarities[max_confidence_index]))
+
+        # max_confidence = max(confidences)
+        # max_confidence_index = confidences.index(max_confidence)
 
         ## Find the Center of the best box
         center_x = (boxes[max_confidence_index][0] + boxes[max_confidence_index][2]) / 2

@@ -121,19 +121,19 @@ class ImageSegmentNode(Node):
             similarities.append(similarity)
 
         # Determine max clip similarity (similarity with name), this will grab multiple. it's supposed to
-        max_similarity = max(similarities)
-        similarity_indices = []
-        for i, similarity in enumerate(similarities):
-            if abs(similarity - max_similarity) < .005:  # set a tolerance for picking the best thing
-                similarity_indices.append(i)
+        # max_similarity = max(similarities)
+        # similarity_indices = []
+        # for i, similarity in enumerate(similarities):
+        #     if abs(similarity - max_similarity) < .005:  # set a tolerance for picking the best thing
+        #         similarity_indices.append(i)
 
-        ### Pull confidences for max similarities
-        confidences_max_similarities = [confidences[i] for i in similarity_indices]
+        # ### Pull confidences for max similarities
+        # confidences_max_similarities = [confidences[i] for i in similarity_indices]
 
-        max_confidence = max(confidences_max_similarities)  ### Using best YOLO confidence
-        max_confidence_index = confidences.index(max_confidence)
-        filtered_boxes.append((boxes[max_confidence_index], class_names[classes[max_confidence_index]],
-                               scores[max_confidence_index], similarities[max_confidence_index]))
+        # max_confidence = max(confidences_max_similarities)  ### Using best YOLO confidence
+        # max_confidence_index = confidences.index(max_confidence)
+        # filtered_boxes.append((boxes[max_confidence_index], class_names[classes[max_confidence_index]],
+        #                        scores[max_confidence_index], similarities[max_confidence_index]))
 
         ## Find the Center of the best box
         center_x = (boxes[max_confidence_index][0] + boxes[max_confidence_index][2]) / 2

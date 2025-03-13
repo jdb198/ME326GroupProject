@@ -23,6 +23,7 @@ class ManipulationNode(Node):
 
         # Subscribers
         self.create_subscription(TargetObject, "/perception/target_coord", self.coord_callback, 10)
+        self.create_subscription(Bool, "/navigation/drop", self.drop_callback, 10)
 
         # State variables
 
@@ -42,6 +43,10 @@ class ManipulationNode(Node):
         pub_msg = Bool()
         pub_msg.data = success
         self.grasp_success_pub.publish(pub_msg)
+    
+    def drop_callback(self, msg):
+        if msg.data:
+            self.locobot.gripper.release()  
     
     def coord_callback(self, msg):
         """ Store the image_segment_node-given object information and trigger processing """

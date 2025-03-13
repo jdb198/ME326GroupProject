@@ -27,7 +27,8 @@ class LocobotBaseMotionTracking(Node):
         self.text_publisher = self.create_publisher(String, 'transcribed_text', 10)
         # self.nav_pose_subscriber = self.create_subscription(PoseStamped, '/camera_pose_receive', self.posestamp_callback, 10)
         self.target_coord_subscriber = self.create_subscription(TargetObject, '/perception/target_coord', self.target_callback, 10)
-        self.grasp_success_subscriber = self.create_publisher(Bool, "/manipulation/grasp_success", 10)
+
+        self.drop_publisher = self.create_publisher(Bool, "/navigation/drop", 10)
         
     
         # self.get_new_coord = False
@@ -102,6 +103,8 @@ class LocobotBaseMotionTracking(Node):
 
         self.transcriber = False
 
+        self.purpose = -1
+
         self.get_logger().info('The velocity_publisher node has started.')  # Relay node start message to user
 
     # PoseStamped callback function
@@ -127,6 +130,7 @@ class LocobotBaseMotionTracking(Node):
 
         self.prev_pose = self.target_pose
         self.target_pose = target_msg.pose
+        self.purpose = target_msg.purpose
         # self.target_pose = target_msg
 
         # For PoseStamped messages
@@ -341,6 +345,12 @@ class LocobotBaseMotionTracking(Node):
                 else:
                     self.angle_reached = True
                     print("Reached goal")
+
+                    if self.purpose == 2:
+                        drop_msg = Bool()
+                        drop_msg.data = True
+                        self.drop_publisher.publish(drop_msg)
+
                     # reach_goal_msg = Bool()
                     # reach_goal_msg.data = False
                     # self.next_step_publisher.publish(reach_goal_msg)
