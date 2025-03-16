@@ -4,45 +4,26 @@ import rclpy
 import rclpy.duration
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy
-
 import rclpy.time
 from rclpy.wait_for_message import wait_for_message
-from sensor_msgs.msg import Image, CameraInfo,PointCloud2, PointField
+from sensor_msgs.msg import Image, CameraInfo, PointCloud2, PointField
 from nav_msgs.msg import Odometry
-from std_msgs.msg import String
+from std_msgs.msg import String, Bool
 from realsense2_camera_msgs.msg import Extrinsics
 from geometry_msgs.msg import TransformStamped, PoseStamped
-from std_msgs.msg import ByteMultiArray, UInt8MultiArray, String, Float32MultiArray
 from visualization_msgs.msg import Marker #Only for debugging
 from basic.msg import TargetObject
-
 from cv_bridge import CvBridge
-import tf2_ros
-
-import numpy as np
-import cv2 #Only for debugging
 from scipy.spatial.transform import Rotation
-
 from utils.align_depth_fncs import align_depth
-
 from interbotix_xs_modules.xs_robot.locobot import InterbotixLocobotXS
 import time
 import struct
-
 import torch
-import numpy as np 
-import matplotlib.pyplot as plt
-import rclpy
-from rclpy.node import Node
-from rclpy.qos import QoSProfile, ReliabilityPolicy
-from rclpy.wait_for_message import wait_for_message
-from sensor_msgs.msg import Image, CameraInfo
 import numpy as np
-from std_msgs.msg import ByteMultiArray, UInt8MultiArray, String, Float32MultiArray
+import matplotlib.pyplot as plt
 from PIL import Image as pil_image
 import tf2_ros
-import torch
-from std_msgs.msg import Bool
 import cv2
 from ultralytics import YOLO
 from open_clip import create_model, tokenize  # Assuming these are defined elsewhere
