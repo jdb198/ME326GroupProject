@@ -95,14 +95,11 @@ class LocobotBaseMotionTracking(Node):
         # Define derivative error
         # self.derivative_error = np.matrix([[0], [0]])
 
-        # Define the boolean values on if the position or angle has been reached
+        # Define the boolean values on if the position or angle has been reached. Also, initialize grasping, transcriber, and purpose variables
         self.position_reached = False
         self.angle_reached = False
-
         self.grasped = False
-
         self.transcriber = False
-
         self.purpose = -1
 
         self.get_logger().info('The velocity_publisher node has started.')  # Relay node start message to user
@@ -115,6 +112,7 @@ class LocobotBaseMotionTracking(Node):
     #     self.position_reached = False
     #     self.angle_reached = False
 
+    # Grasp Boolean message callback function
     def grasp_success_callback(self, grasp_msg: Bool):
             self.grasped = grasp_msg
     
@@ -150,24 +148,24 @@ class LocobotBaseMotionTracking(Node):
             self.target_pose.pose.position.x = self.target_pose.pose.position.x - 0.45
             print(self.target_pose.pose.position.x)
 
-            # x_dist = self.target_pose.pose.position.x - self.prev_pose.pose.position.x
-            # y_dist = self.target_pose.pose.position.y - self.prev_pose.pose.position.y
+            x_dist = self.target_pose.pose.position.x - self.prev_pose.pose.position.x
+            y_dist = self.target_pose.pose.position.y - self.prev_pose.pose.position.y
 
-            # updated_target_pose = copy.deepcopy(self.prev_pose)
+            updated_target_pose = copy.deepcopy(self.prev_pose)
 
-            # if abs(x_dist) > 0.1:
-            #     if x_dist > 0:
-            #         updated_target_pose.pose.position.x += 0.1
-            #     else:
-            #         updated_target_pose.pose.position.x -= 0.1
+            if abs(x_dist) > 0.1:
+                if x_dist > 0:
+                    updated_target_pose.pose.position.x += 0.1
+                else:
+                    updated_target_pose.pose.position.x -= 0.1
 
-            # if abs(y_dist) > 0.1:
-            #     if y_dist > 0:
-            #         updated_target_pose.pose.position.y += 0.1
-            #     else:
-            #         updated_target_pose.pose.position.y -= 0.1
+            if abs(y_dist) > 0.1:
+                if y_dist > 0:
+                    updated_target_pose.pose.position.y += 0.1
+                else:
+                    updated_target_pose.pose.position.y -= 0.1
 
-            # self.target_pose = updated_target_pose
+            self.target_pose = updated_target_pose
 
             self.transcriber = True
 
